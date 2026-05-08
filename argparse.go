@@ -8,7 +8,7 @@ import (
 type ArgumentData struct {
 	Keys       []string // Multiple keys like ["silent", "headless"]
 	AfterCount int      // How many args to consume after the key
-	Target     any      // Default value if not found
+	Target     any      // Place to put the value
 }
 
 // Helper to check if a key matches this ArgumentData
