@@ -12,15 +12,15 @@ type ArgumentData struct {
 }
 
 // Helper to check if a key matches this ArgumentData
-func (a ArgumentData) Matches(input string) bool {
-	cleanInput := strings.TrimLeft(input, "-")
-	for _, k := range a.Keys {
-		if k == cleanInput {
-			return true
-		}
-	}
-	return false
-}
+// func (a ArgumentData) Matches(input string) bool {
+// 	cleanInput := strings.TrimLeft(input, "-")
+// 	for _, k := range a.Keys {
+// 		if k == cleanInput {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 // func CheckArgs(argDefinitions []ArgumentData) []any {
 // 	// Initialize results with default values
