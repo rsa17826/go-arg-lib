@@ -1,89 +1,30 @@
 package argparse
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
 
 type ArgumentData struct {
-	Keys       []string // Multiple keys like ["silent", "headless"]
-	AfterCount int      // How many args to consume after the key
-	Target     any      // Place to put the value
+	Keys        []string
+	AfterCount  int
+	Target      any
+	Description string
 }
 
-// Helper to check if a key matches this ArgumentData
-// func (a ArgumentData) Matches(input string) bool {
-// 	cleanInput := strings.TrimLeft(input, "-")
-// 	for _, k := range a.Keys {
-// 		if k == cleanInput {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
+type ParseOptions struct {
+	DisableDefaultHelp bool
+}
 
-// func CheckArgs(argDefinitions []ArgumentData) []any {
-// 	// Initialize results with default values
-// 	results := make([]any, len(argDefinitions))
-// 	for i, def := range argDefinitions {
-// 		results[i] = def.Default
-// 	}
-
-// 	// Use os.Args[1:] (skipping the program name)
-// 	// We handle the "--" separator logic here
-// 	args := os.Args[1:]
-// 	for i, v := range args {
-// 		if v == "--" {
-// 			args = args[:i]
-// 			break
-// 		}
-// 	}
-
-// 	// Manual iteration to allow variable step sizes
-// 	for i := 0; i < len(args); {
-// 		currentArg := args[i]
-// 		found := false
-
-// 		for idx, def := range argDefinitions {
-// 			if def.Matches(currentArg) {
-// 				found = true
-
-// 				if def.AfterCount == 0 {
-// 					results[idx] = true
-// 					i += 1 // Move to next arg
-// 				} else if def.AfterCount == 1 {
-// 					if i+1 < len(args) {
-// 						results[idx] = args[i+1]
-// 						i += 2 // Consume key and 1 value
-// 					} else {
-// 						fmt.Printf("err: %s requires 1 arg\n", currentArg)
-// 						i += 1
-// 					}
-// 				} else if def.AfterCount > 1 {
-// 					if i+def.AfterCount < len(args) {
-// 						results[idx] = args[i+1 : i+1+def.AfterCount]
-// 						i += 1 + def.AfterCount // Consume key and N values
-// 					} else {
-// 						fmt.Printf("err: %s requires %d args\n", currentArg, def.AfterCount)
-// 						i = len(args) // Stop processing
-// 					}
-// 				}
-// 				break // Exit the definitions loop
-// 			}
-// 		}
-
-// 		if !found {
-// 			i++ // Skip unknown arg
-// 		}
-// 	}
-
-// 	return results
-// }
-
-func ParseArgs(argDefinitions []ArgumentData) {
+func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	args := os.Args[1:]
+	disableHelp := false
+	if len(opts) > 0 && opts[0].DisableDefaultHelp {
+		disableHelp = true
+	}
 
-	// Handle "--" separator
+	// 1. Handle "--" separator
 	for i, v := range args {
 		if v == "--" {
 			args = args[:i]
@@ -91,13 +32,24 @@ func ParseArgs(argDefinitions []ArgumentData) {
 		}
 	}
 
+	// 2. Automatic Help Logic
+	if !disableHelp {
+		for i, arg := range args {
+			if matches([]string{"h", "help"}, arg) {
+				// Get filter keywords if they exist: -h test t2
+				filter := args[i+1:]
+				printHelp(argDefinitions, filter)
+				os.Exit(0)
+			}
+		}
+	}
+
+	// 3. Existing Parsing Logic
 	for i := 0; i < len(args); {
 		found := false
 		for _, def := range argDefinitions {
 			if matches(def.Keys, args[i]) {
 				found = true
-
-				// Logic to fill the Target pointer based on AfterCount
 				if def.AfterCount == 0 {
 					if t, ok := def.Target.(*bool); ok {
 						*t = true
@@ -120,6 +72,29 @@ func ParseArgs(argDefinitions []ArgumentData) {
 		if !found {
 			i++
 		}
+	}
+}
+
+func printHelp(defs []ArgumentData, filters []string) {
+	fmt.Println("Usage Options:")
+	for _, def := range defs {
+		keysStr := "-" + strings.Join(def.Keys, ", -")
+
+		// If filters are provided, check if any key or description matches
+		if len(filters) > 0 {
+			match := false
+			for _, f := range filters {
+				if strings.Contains(keysStr, f) || strings.Contains(strings.ToLower(def.Description), strings.ToLower(f)) {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+
+		fmt.Printf("  %-20s %s\n", keysStr, def.Description)
 	}
 }
 
