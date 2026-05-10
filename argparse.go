@@ -38,7 +38,7 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 			if matches([]string{"h", "help"}, arg) {
 				// Get filter keywords if they exist: -h test t2
 				filter := args[i+1:]
-				printHelp(argDefinitions, filter)
+				PrintHelp(argDefinitions, filter)
 				os.Exit(0)
 			}
 		}
@@ -75,7 +75,7 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	}
 }
 
-func printHelp(defs []ArgumentData, filters []string) {
+func PrintHelp(defs []ArgumentData, filters []string) {
 	fmt.Println("Usage Options:")
 	for _, def := range defs {
 		keysStr := "-" + strings.Join(def.Keys, ", -")
