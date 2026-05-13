@@ -244,7 +244,7 @@ func formatExample(def ArgumentData) string {
 	}
 	rawKey := p + def.Keys[0]
 	// Use Cyan for the flag, then immediately switch back to Gray for the values
-	coloredKey := Cyan + rawKey + Gray
+	coloredKey := Blue + rawKey + Gray
 
 	if def.VarArgs {
 		if def.AllowDupes {
