@@ -237,29 +237,38 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 
 // formatExample generates a dummy usage string based on the definition
 func formatExample(def ArgumentData) string {
-	primaryKey := "-" + def.Keys[0]
+	// 1. Create the colored and uncolored versions of the key
+	p := "-"
 	if len(def.Keys[0]) > 1 {
-		primaryKey = "-" + primaryKey
+		p = "--"
 	}
+	rawKey := p + def.Keys[0]
+	// Use Cyan for the flag, then immediately switch back to Gray for the values
+	coloredKey := Cyan + rawKey + Gray
 
 	if def.VarArgs {
 		if def.AllowDupes {
-			return fmt.Sprintf("%s item1 item2 item3 or %s item1 item2 %s item3", primaryKey, primaryKey, primaryKey)
+			return fmt.Sprintf("%s item1 item2 item3 or %s item1 item2 %s item3",
+				coloredKey, coloredKey, coloredKey)
 		}
-		return fmt.Sprintf("%s item1 item2 item3", primaryKey)
+		return fmt.Sprintf("%s item1 item2 item3", coloredKey)
 	}
+
 	if def.AllowDupes && def.AfterCount == 0 {
-		return fmt.Sprintf("%s %s %s (counts occurrences)", primaryKey, primaryKey, primaryKey)
+		return fmt.Sprintf("%s %s %s (counts occurrences)",
+			coloredKey, coloredKey, coloredKey)
 	}
+
 	if def.AllowDupes && def.AfterCount == 1 {
-		return fmt.Sprintf("%s val1 %s val2", primaryKey, primaryKey)
+		return fmt.Sprintf("%s val1 %s val2", coloredKey, coloredKey)
 	}
+
 	if def.AfterCount > 1 {
 		vals := []string{}
 		for i := 1; i <= def.AfterCount; i++ {
 			vals = append(vals, fmt.Sprintf("val%d", i))
 		}
-		return fmt.Sprintf("%s %s", primaryKey, strings.Join(vals, " "))
+		return fmt.Sprintf("%s %s", coloredKey, strings.Join(vals, " "))
 	}
 	return ""
 }
