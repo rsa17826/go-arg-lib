@@ -267,6 +267,8 @@ func formatExample(def ArgumentData) string {
 		var default_ any = nil
 		if index < len(def.ExampleArgs) {
 			name = def.ExampleArgs[index]
+		}
+		if index < len(def.Default) {
 			default_ = def.Default[index]
 		}
 		if default_ != nil {
