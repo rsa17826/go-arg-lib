@@ -163,41 +163,54 @@ const (
 )
 
 func PrintHelp(defs []ArgumentData, filters []string) {
-	fmt.Println("Usage Options:")
-	fmt.Printf("  %-25s %-15s %s\n", "FLAGS", "EXPECTS", "DESCRIPTION")
-	fmt.Printf("  %-25s %-15s %s\n", "-----", "-------", "-----------")
+	fmt.Printf("\n%sUsage Options:%s\n", Bold, Reset)
+
+	// Define column widths
+	const (
+		col1Width = 30
+		col2Width = 20
+	)
+
+	// Headers
+	fmt.Printf("  %-*s %-*s %s\n", col1Width, "FLAGS", col2Width, "EXPECTS", "DESCRIPTION")
+	fmt.Printf("  %s\n", strings.Repeat("-", col1Width+col2Width+15))
 
 	for _, def := range defs {
-		// Format keys: e.g., "-h, --help"
-		keysStr := ""
+		// 1. Build Key String (with colors)
+		keysFormatted := []string{}
+		rawKeysLen := 0
 		for i, k := range def.Keys {
-			prefix := "-"
+			p := "-"
 			if len(k) > 1 {
-				prefix = "--"
+				p = "--"
 			}
-			keysStr += prefix + k
+			keysFormatted = append(keysFormatted, Cyan+p+k+Reset)
+			rawKeysLen += len(p) + len(k)
 			if i < len(def.Keys)-1 {
-				keysStr += ", "
+				rawKeysLen += 2 // for ", "
 			}
 		}
+		keysStr := strings.Join(keysFormatted, ", ")
 
-		// Determine the "Expects" hint based on AfterCount and VarArgs
-		expects := ""
+		// 2. Build Expects String (with colors)
+		var expects, rawExpects string
 		if def.VarArgs {
-			expects = Yellow + "<val1>...<valN>" + Reset
+			expects, rawExpects = Yellow+"<val1>...<valN>"+Reset, "<val1>...<valN>"
 		} else if def.AfterCount == 0 {
-			expects = Gray + "[flag]" + Reset
+			expects, rawExpects = Gray+"[flag]"+Reset, "[flag]"
 		} else if def.AfterCount == 1 {
-			expects = Yellow + "<value>" + Reset
+			expects, rawExpects = Yellow+"<value>"+Reset, "<value>"
 		} else {
-			expects = fmt.Sprintf("%s<%d values>%s", Yellow, def.AfterCount, Reset)
+			rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
+			expects = Yellow + rawExpects + Reset
 		}
 
-		// Filtering logic
+		// 3. Filtering logic
 		if len(filters) > 0 {
 			match := false
+			fullKeyMatch := strings.Join(def.Keys, " ")
 			for _, f := range filters {
-				if strings.Contains(keysStr, f) || strings.Contains(strings.ToLower(def.Description), strings.ToLower(f)) {
+				if strings.Contains(fullKeyMatch, f) || strings.Contains(strings.ToLower(def.Description), strings.ToLower(f)) {
 					match = true
 					break
 				}
@@ -207,13 +220,17 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 			}
 		}
 
-		// Print main row
-		fmt.Printf("  %-38s %-25s %s\n", keysStr, expects, def.Description)
+		// 4. PRINTING WITH MANUAL PADDING
+		// We subtract the "invisible" color bytes by calculating the difference
+		// between the colored string length and the plain text length.
+		kPadding := col1Width + (len(keysStr) - rawKeysLen)
+		ePadding := col2Width + (len(expects) - len(rawExpects))
 
-		// 4. Print examples (Gray/Italic style)
+		fmt.Printf("  %-*s %-*s %s\n", kPadding, keysStr, ePadding, expects, def.Description)
+
+		// 5. Example Row
 		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 {
-			example := fmt.Sprintf("    %sExample: %s%s", Gray, formatExample(def), Reset)
-			fmt.Println(example)
+			fmt.Printf("    %sExample: %s%s\n", Gray, formatExample(def), Reset)
 		}
 	}
 }
