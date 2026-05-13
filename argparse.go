@@ -206,7 +206,7 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 				default_ = def.Default[0]
 			}
 			if default_ != nil {
-				expects, rawExpects = Yellow+formatArg("value", default_)+Gray, "<value="+repr(default_)+">"
+				expects, rawExpects = formatArg("value", default_), "<value="+repr(default_)+">"
 			} else {
 				expects, rawExpects = formatArg("value", nil), "<value>"
 			}
