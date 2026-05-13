@@ -317,7 +317,10 @@ func formatExample(def ArgumentData) string {
 		if index < len(def.Default) {
 			default_ = def.Default[index]
 		}
-		return formatArg(name, default_)
+		if default_ != nil {
+			return Blue + repr(default_) + Reset
+		}
+		return Yellow + "<" + Cyan + name + Yellow + ">" + Reset
 	}
 
 	if def.VarArgs {
