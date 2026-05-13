@@ -201,14 +201,18 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 		} else if def.AfterCount == 0 {
 			expects, rawExpects = Blue+"[flag]"+Reset, "[flag]"
 		} else if def.AfterCount == 1 {
-			var default_ any
+			name := "value"
+			var default_ any = nil
+			if 0 < len(def.ExampleArgs) {
+				name = def.ExampleArgs[0]
+			}
 			if 0 < len(def.Default) {
 				default_ = def.Default[0]
 			}
 			if default_ != nil {
-				expects, rawExpects = formatArg("value", default_), "<value="+repr(default_)+">"
+				expects, rawExpects = formatArg(""+name+"", default_), "<"+name+"="+repr(default_)+">"
 			} else {
-				expects, rawExpects = formatArg("value", nil), "<value>"
+				expects, rawExpects = formatArg(""+name+"", nil), "<"+name+">"
 			}
 		} else {
 			rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
