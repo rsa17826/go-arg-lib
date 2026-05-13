@@ -23,18 +23,24 @@ type ParseOptions struct {
 	DisableDefaultHelp bool
 }
 
-func assign(target any, values any) {
+func assign(target any, value any) {
 	targetVal := reflect.ValueOf(target)
+	if targetVal.Kind() != reflect.Ptr {
+		return
+	}
 
-	// Ensure target is a pointer so we can modify the value it points to
-	if targetVal.Kind() == reflect.Ptr {
-		// Indirect gets the value the pointer points to (the 'elem')
-		targetElem := targetVal.Elem()
-		val := reflect.ValueOf(values)
+	targetElem := targetVal.Elem()
+	val := reflect.ValueOf(value)
 
-		if val.Type().AssignableTo(targetElem.Type()) {
-			targetElem.Set(val)
-		}
+	// If the types match exactly, set it
+	if val.Type().AssignableTo(targetElem.Type()) {
+		targetElem.Set(val)
+		return
+	}
+
+	// If types don't match (e.g. int vs int64), try to convert it
+	if val.Type().ConvertibleTo(targetElem.Type()) {
+		targetElem.Set(val.Convert(targetElem.Type()))
 	}
 }
 
@@ -64,9 +70,15 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 		}
 	}
 	for i := range argDefinitions {
-		default_ := argDefinitions[i].Default
-		if default_ != nil {
-			assign(argDefinitions[i].Target, default_)
+		def := &argDefinitions[i]
+		if len(def.Default) > 0 {
+			// If AfterCount is 1, we want the first element of the Default slice
+			if def.AfterCount <= 1 && !def.VarArgs {
+				assign(def.Target, def.Default[0])
+			} else {
+				// If it's a slice target (AfterCount > 1 or VarArgs), assign the whole slice
+				assign(def.Target, def.Default)
+			}
 		}
 	}
 	// 3. Parsing Logic
