@@ -169,8 +169,8 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 
 	// Define column widths
 	const (
-		col1Width = 30
-		col2Width = 20
+		col1Width = 20
+		col2Width = 30
 	)
 
 	// Headers
