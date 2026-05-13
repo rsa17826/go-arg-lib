@@ -230,7 +230,7 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 
 		// 5. Example Row
 		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 {
-			fmt.Printf("    %sExample:\n%s%s\n", Gray, formatExample(def), Reset)
+			fmt.Printf("    %sExample:\n    %s%s\n", Gray, formatExample(def), Reset)
 		}
 	}
 }
