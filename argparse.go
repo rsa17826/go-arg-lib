@@ -32,15 +32,36 @@ func assign(target any, value any) {
 	targetElem := targetVal.Elem()
 	val := reflect.ValueOf(value)
 
-	// If the types match exactly, set it
+	// 1. Direct Assignment (works for bool, string, etc.)
 	if val.Type().AssignableTo(targetElem.Type()) {
 		targetElem.Set(val)
 		return
 	}
 
-	// If types don't match (e.g. int vs int64), try to convert it
+	// 2. Handle Slice Conversion (e.g., []any -> []int)
+	if targetElem.Kind() == reflect.Slice && (val.Kind() == reflect.Slice || val.Kind() == reflect.Array) {
+		newSlice := reflect.MakeSlice(targetElem.Type(), val.Len(), val.Len())
+		for i := 0; i < val.Len(); i++ {
+			item := val.Index(i)
+			// Handle the fact that the slice contains 'any' (interfaces)
+			if item.Kind() == reflect.Interface {
+				item = item.Elem()
+			}
+
+			targetType := targetElem.Type().Elem()
+			if item.Type().ConvertibleTo(targetType) {
+				newSlice.Index(i).Set(item.Convert(targetType))
+			}
+		}
+		targetElem.Set(newSlice)
+		return
+	}
+
+	// 3. Handle Single Value Conversion (e.g., int64 -> int)
 	if val.Type().ConvertibleTo(targetElem.Type()) {
 		targetElem.Set(val.Convert(targetElem.Type()))
+	} else {
+		println("failed to set default for", target, value)
 	}
 }
 
@@ -72,13 +93,20 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	for i := range argDefinitions {
 		def := &argDefinitions[i]
 		if len(def.Default) > 0 {
-			// If AfterCount is 1, we want the first element of the Default slice
-			if def.AfterCount <= 1 && !def.VarArgs {
+			targetKind := reflect.TypeOf(def.Target).Elem().Kind()
+
+			if targetKind != reflect.Slice && len(def.Default) > 0 {
 				assign(def.Target, def.Default[0])
 			} else {
-				// If it's a slice target (AfterCount > 1 or VarArgs), assign the whole slice
 				assign(def.Target, def.Default)
 			}
+			// If AfterCount is 1, we want the first element of the Default slice
+			// if def.AfterCount <= 1 && !def.VarArgs {
+			// 	assign(def.Target, def.Default[0])
+			// } else {
+			// 	// If it's a slice target (AfterCount > 1 or VarArgs), assign the whole slice
+			// 	assign(def.Target, def.Default)
+			// }
 		}
 	}
 	// 3. Parsing Logic
