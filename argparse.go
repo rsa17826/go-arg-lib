@@ -173,7 +173,7 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 
 	// Headers
 	fmt.Printf("  %-*s %-*s %s\n", col1Width, "FLAGS", col2Width, "EXPECTS", "DESCRIPTION")
-	fmt.Printf("  %s\n", strings.Repeat("-", col1Width+col2Width+15))
+	fmt.Printf("  %s%s\n%s", Gray, strings.Repeat("-", col1Width+col2Width+13), Reset)
 
 	for _, def := range defs {
 		// 1. Build Key String (with colors)
