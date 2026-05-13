@@ -248,8 +248,7 @@ func formatExample(def ArgumentData) string {
 
 	if def.VarArgs {
 		if def.AllowDupes {
-			return fmt.Sprintf("%s item1 item2 item3    \n%s item1 item2 %s item3",
-				coloredKey, coloredKey, coloredKey)
+			return fmt.Sprintf("%s item1 item2 item3\n    %s item1 item2 %s item3", coloredKey, coloredKey, coloredKey)
 		}
 		return fmt.Sprintf("%s item1 item2 item3", coloredKey)
 	}
