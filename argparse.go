@@ -3,6 +3,7 @@ package argparse
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -20,6 +21,21 @@ type ArgumentData struct {
 
 type ParseOptions struct {
 	DisableDefaultHelp bool
+}
+
+func assign(target any, values any) {
+	targetVal := reflect.ValueOf(target)
+
+	// Ensure target is a pointer so we can modify the value it points to
+	if targetVal.Kind() == reflect.Ptr {
+		// Indirect gets the value the pointer points to (the 'elem')
+		targetElem := targetVal.Elem()
+		val := reflect.ValueOf(values)
+
+		if val.Type().AssignableTo(targetElem.Type()) {
+			targetElem.Set(val)
+		}
+	}
 }
 
 func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
@@ -47,7 +63,12 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 			}
 		}
 	}
-
+	for i := range argDefinitions {
+		default_ := argDefinitions[i].Default
+		if default_ != nil {
+			assign(argDefinitions[i].Target, default_)
+		}
+	}
 	// 3. Parsing Logic
 	for i := 0; i < len(args); {
 		found := false
@@ -240,7 +261,6 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 					noDataCounter += 1
 				}
 			}
-
 		}
 		//  else {
 		// 	// rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
