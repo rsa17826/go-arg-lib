@@ -239,9 +239,9 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 		fmt.Printf("  %-*s %-*s %s\n", kPadding, keysStr, ePadding, expects, def.Description)
 
 		// 5. Example Row
-		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 {
+		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 || len(def.ExampleArgs) > 0 || len(def.Default) > 0 {
+			fmt.Printf("    %sExample:\n    %s%s\n", Gray, formatExample(def), Reset)
 		}
-		fmt.Printf("    %sExample:\n    %s%s\n", Gray, formatExample(def), Reset)
 	}
 }
 
