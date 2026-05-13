@@ -14,6 +14,7 @@ type ArgumentData struct {
 	Description string
 	VarArgs     bool
 	AllowDupes  bool
+	ExampleArgs []string
 }
 
 type ParseOptions struct {
@@ -237,20 +238,32 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 
 // formatExample generates a dummy usage string based on the definition
 func formatExample(def ArgumentData) string {
-	// 1. Create the colored and uncolored versions of the key
 	p := "-"
 	if len(def.Keys[0]) > 1 {
 		p = "--"
 	}
 	rawKey := p + def.Keys[0]
-	// Use Cyan for the flag, then immediately switch back to Gray for the values
+	// Blue for the flag, then Gray for the surrounding "Example:" text
 	coloredKey := Blue + rawKey + Gray
 
-	if def.VarArgs {
-		if def.AllowDupes {
-			return fmt.Sprintf("%s item1 item2 item3\n    %s item1 item2 %s item3", coloredKey, coloredKey, coloredKey)
+	// Helper to get either the custom ExampleArg or the fallback "valN"
+	// and wrap it in Yellow + brackets
+	getValName := func(index int) string {
+		name := fmt.Sprintf("val%d", index+1)
+		if index < len(def.ExampleArgs) {
+			name = def.ExampleArgs[index]
 		}
-		return fmt.Sprintf("%s item1 item2 item3", coloredKey)
+		return Yellow + "<" + name + ">" + Gray
+	}
+
+	if def.VarArgs {
+		v1, v2, v3 := getValName(0), getValName(1), getValName(2)
+		if def.AllowDupes {
+			return fmt.Sprintf("%s %s %s %s\n    %s %s %s %s %s",
+				coloredKey, v1, v2, v3,
+				coloredKey, v1, v2, coloredKey, v3)
+		}
+		return fmt.Sprintf("%s %s %s %s", coloredKey, v1, v2, v3)
 	}
 
 	if def.AllowDupes && def.AfterCount == 0 {
@@ -259,13 +272,14 @@ func formatExample(def ArgumentData) string {
 	}
 
 	if def.AllowDupes && def.AfterCount == 1 {
-		return fmt.Sprintf("%s val1 %s val2", coloredKey, coloredKey)
+		v1, v2 := getValName(0), getValName(1)
+		return fmt.Sprintf("%s %s %s %s", coloredKey, v1, coloredKey, v2)
 	}
 
 	if def.AfterCount > 1 {
 		vals := []string{}
-		for i := 1; i <= def.AfterCount; i++ {
-			vals = append(vals, fmt.Sprintf("val%d", i))
+		for i := 0; i < def.AfterCount; i++ {
+			vals = append(vals, getValName(i))
 		}
 		return fmt.Sprintf("%s %s", coloredKey, strings.Join(vals, " "))
 	}
