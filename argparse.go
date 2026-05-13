@@ -15,6 +15,7 @@ type ArgumentData struct {
 	VarArgs     bool
 	AllowDupes  bool
 	ExampleArgs []string
+	Default     []any
 }
 
 type ParseOptions struct {
@@ -236,6 +237,19 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 	}
 }
 
+func repr(v any) string {
+	if v == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%#v", v)
+	// switch val := v.(type) {
+	// case string:
+	// 	return `"` + val + `"` // Wraps strings in quotes
+	// default:
+	// 	return fmt.Sprintf("%v", val)
+	// }
+}
+
 // formatExample generates a dummy usage string based on the definition
 func formatExample(def ArgumentData) string {
 	p := "-"
@@ -250,8 +264,13 @@ func formatExample(def ArgumentData) string {
 	// and wrap it in Yellow + brackets
 	getValName := func(index int) string {
 		name := fmt.Sprintf("val%d", index+1)
+		var default_ any = nil
 		if index < len(def.ExampleArgs) {
 			name = def.ExampleArgs[index]
+			default_ = def.Default[index]
+		}
+		if default_ != nil {
+			return Yellow + "<" + name + "=" + Blue + repr(default_) + Yellow + ">" + Gray
 		}
 		return Yellow + "<" + name + ">" + Gray
 	}
