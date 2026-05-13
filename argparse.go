@@ -152,6 +152,16 @@ func isAnyKey(defs []ArgumentData, token string) bool {
 	return false
 }
 
+const (
+	Reset  = "\033[0m"
+	Bold   = "\033[1m"
+	Green  = "\033[32m"
+	Yellow = "\033[33m"
+	Blue   = "\033[34m"
+	Cyan   = "\033[36m"
+	Gray   = "\033[90m"
+)
+
 func PrintHelp(defs []ArgumentData, filters []string) {
 	fmt.Println("Usage Options:")
 	fmt.Printf("  %-25s %-15s %s\n", "FLAGS", "EXPECTS", "DESCRIPTION")
@@ -174,13 +184,13 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 		// Determine the "Expects" hint based on AfterCount and VarArgs
 		expects := ""
 		if def.VarArgs {
-			expects = "<val1>...<valN>"
+			expects = Yellow + "<val1>...<valN>" + Reset
 		} else if def.AfterCount == 0 {
-			expects = "[flag]"
+			expects = Gray + "[flag]" + Reset
 		} else if def.AfterCount == 1 {
-			expects = "<value>"
+			expects = Yellow + "<value>" + Reset
 		} else {
-			expects = fmt.Sprintf("<%d values>", def.AfterCount)
+			expects = fmt.Sprintf("%s<%d values>%s", Yellow, def.AfterCount, Reset)
 		}
 
 		// Filtering logic
@@ -198,11 +208,11 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 		}
 
 		// Print main row
-		fmt.Printf("  %-25s %-15s %s\n", keysStr, expects, def.Description)
+		fmt.Printf("  %-38s %-25s %s\n", keysStr, expects, def.Description)
 
-		// Print examples based on Target type/logic
+		// 4. Print examples (Gray/Italic style)
 		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 {
-			example := "    Example: " + formatExample(def)
+			example := fmt.Sprintf("    %sExample: %s%s", Gray, formatExample(def), Reset)
 			fmt.Println(example)
 		}
 	}
