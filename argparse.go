@@ -206,6 +206,10 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 				name := "value"
 				var default_ any = nil
 				var dataFound = false
+				if i > 0 {
+					expects += " "
+					rawExpects += " "
+				}
 				if i < len(def.ExampleArgs) {
 					dataFound = true
 					if noDataCounter > 0 {
