@@ -200,24 +200,44 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 			expects, rawExpects = Yellow+"<val1>...<valN>"+Reset, "<val1>...<valN>"
 		} else if def.AfterCount == 0 {
 			expects, rawExpects = Blue+"[flag]"+Reset, "[flag]"
-		} else if def.AfterCount == 1 {
-			name := "value"
-			var default_ any = nil
-			if 0 < len(def.ExampleArgs) {
-				name = def.ExampleArgs[0]
-			}
-			if 0 < len(def.Default) {
-				default_ = def.Default[0]
-			}
-			if default_ != nil {
-				expects, rawExpects = formatArg(""+name+"", default_), "<"+name+"="+repr(default_)+">"
-			} else {
-				expects, rawExpects = formatArg(""+name+"", nil), "<"+name+">"
-			}
 		} else {
-			rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
-			expects = Yellow + rawExpects + Reset
+			noDataCounter := 0
+			data := ""
+			for i := range def.AfterCount {
+				name := "value"
+				var default_ any = nil
+				var dataFound = false
+				if i < len(def.ExampleArgs) {
+					dataFound = true
+					if noDataCounter > 0 {
+						if noDataCounter == 1 {
+							data += "<1 value>"
+						} else {
+							data += fmt.Sprintf("<%d values>", noDataCounter)
+							noDataCounter = 0
+						}
+					}
+					name = def.ExampleArgs[i]
+				}
+				if i < len(def.Default) {
+					dataFound = true
+					default_ = def.Default[i]
+				}
+				if dataFound {
+					if default_ != nil {
+						expects, rawExpects = formatArg(""+name+"", default_), "<"+name+"="+repr(default_)+">"
+					} else {
+						expects, rawExpects = formatArg(""+name+"", nil), "<"+name+">"
+					}
+				} else {
+					noDataCounter += 1
+				}
+			}
 		}
+		//  else {
+		// 	// rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
+		// 	// expects = Yellow + rawExpects + Reset
+		// }
 
 		// 3. Filtering logic
 		if len(filters) > 0 {
