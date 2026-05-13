@@ -164,7 +164,7 @@ const (
 )
 
 func PrintHelp(defs []ArgumentData, filters []string) {
-	fmt.Printf("\n%sUsage Options:%s\n", Bold, Reset)
+	fmt.Printf("%sUsage Options:%s\n", Bold, Reset)
 
 	// Define column widths
 	const (
