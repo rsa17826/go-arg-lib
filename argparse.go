@@ -154,9 +154,36 @@ func isAnyKey(defs []ArgumentData, token string) bool {
 
 func PrintHelp(defs []ArgumentData, filters []string) {
 	fmt.Println("Usage Options:")
-	for _, def := range defs {
-		keysStr := "-" + strings.Join(def.Keys, ", -")
+	fmt.Printf("  %-25s %-15s %s\n", "FLAGS", "EXPECTS", "DESCRIPTION")
+	fmt.Printf("  %-25s %-15s %s\n", "-----", "-------", "-----------")
 
+	for _, def := range defs {
+		// Format keys: e.g., "-h, --help"
+		keysStr := ""
+		for i, k := range def.Keys {
+			prefix := "-"
+			if len(k) > 1 {
+				prefix = "--"
+			}
+			keysStr += prefix + k
+			if i < len(def.Keys)-1 {
+				keysStr += ", "
+			}
+		}
+
+		// Determine the "Expects" hint based on AfterCount and VarArgs
+		expects := ""
+		if def.VarArgs {
+			expects = "<val1>...<valN>"
+		} else if def.AfterCount == 0 {
+			expects = "[flag]"
+		} else if def.AfterCount == 1 {
+			expects = "<value>"
+		} else {
+			expects = fmt.Sprintf("<%d values>", def.AfterCount)
+		}
+
+		// Filtering logic
 		if len(filters) > 0 {
 			match := false
 			for _, f := range filters {
@@ -170,8 +197,44 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 			}
 		}
 
-		fmt.Printf("  %-20s %s\n", keysStr, def.Description)
+		// Print main row
+		fmt.Printf("  %-25s %-15s %s\n", keysStr, expects, def.Description)
+
+		// Print examples based on Target type/logic
+		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 {
+			example := "    Example: " + formatExample(def)
+			fmt.Println(example)
+		}
 	}
+}
+
+// formatExample generates a dummy usage string based on the definition
+func formatExample(def ArgumentData) string {
+	primaryKey := "-" + def.Keys[0]
+	if len(def.Keys[0]) > 1 {
+		primaryKey = "-" + primaryKey
+	}
+
+	if def.VarArgs {
+		if def.AllowDupes {
+			return fmt.Sprintf("%s item1 item2 item3 or %s item1 item2 %s item3", primaryKey, primaryKey, primaryKey)
+		}
+		return fmt.Sprintf("%s item1 item2 item3", primaryKey)
+	}
+	if def.AllowDupes && def.AfterCount == 0 {
+		return fmt.Sprintf("%s %s %s (counts occurrences)", primaryKey, primaryKey, primaryKey)
+	}
+	if def.AllowDupes && def.AfterCount == 1 {
+		return fmt.Sprintf("%s val1 %s val2", primaryKey, primaryKey)
+	}
+	if def.AfterCount > 1 {
+		vals := []string{}
+		for i := 1; i <= def.AfterCount; i++ {
+			vals = append(vals, fmt.Sprintf("val%d", i))
+		}
+		return fmt.Sprintf("%s %s", primaryKey, strings.Join(vals, " "))
+	}
+	return ""
 }
 
 func matches(keys []string, input string) bool {
