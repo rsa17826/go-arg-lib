@@ -197,7 +197,7 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 		if def.VarArgs {
 			expects, rawExpects = Yellow+"<val1>...<valN>"+Reset, "<val1>...<valN>"
 		} else if def.AfterCount == 0 {
-			expects, rawExpects = Gray+"[flag]"+Reset, "[flag]"
+			expects, rawExpects = Cyan+"[flag]"+Reset, "[flag]"
 		} else if def.AfterCount == 1 {
 			expects, rawExpects = Yellow+"<value>"+Reset, "<value>"
 		} else {
