@@ -295,6 +295,9 @@ func formatExample(def ArgumentData) string {
 	if def.AllowDupes && def.AfterCount == 1 {
 		v1, v2 := getValName(0), getValName(1)
 		return fmt.Sprintf("%s %s %s %s", coloredKey, v1, coloredKey, v2)
+	} else if def.AfterCount == 1 {
+		v1 := getValName(0)
+		return fmt.Sprintf("%s %s", coloredKey, v1)
 	}
 
 	if def.AfterCount > 1 {
