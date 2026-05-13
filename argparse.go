@@ -280,9 +280,9 @@ func formatExample(def ArgumentData) string {
 			default_ = def.Default[index]
 		}
 		if default_ != nil {
-			return Yellow + "<" + name + "=" + Blue + repr(default_) + Yellow + ">" + Reset
+			return Yellow + "<" + Cyan + name + Yellow + "=" + Blue + repr(default_) + Yellow + ">" + Reset
 		}
-		return Yellow + "<" + name + ">" + Reset
+		return Yellow + "<" + Cyan + name + Yellow + ">" + Reset
 	}
 
 	if def.VarArgs {
