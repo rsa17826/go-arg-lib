@@ -230,7 +230,7 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 
 		// 5. Example Row
 		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 {
-			fmt.Printf("    %sExample: %s%s\n", Gray, formatExample(def), Reset)
+			fmt.Printf("    %sExample:\n%s%s\n", Gray, formatExample(def), Reset)
 		}
 	}
 }
@@ -248,7 +248,7 @@ func formatExample(def ArgumentData) string {
 
 	if def.VarArgs {
 		if def.AllowDupes {
-			return fmt.Sprintf("%s item1 item2 item3 or %s item1 item2 %s item3",
+			return fmt.Sprintf("%s item1 item2 item3\n%s item1 item2 %s item3",
 				coloredKey, coloredKey, coloredKey)
 		}
 		return fmt.Sprintf("%s item1 item2 item3", coloredKey)
