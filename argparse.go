@@ -206,9 +206,9 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 				default_ = def.Default[0]
 			}
 			if default_ != nil {
-				expects, rawExpects = Yellow+"<value="+Blue+repr(default_)+Yellow+">"+Gray, "<value>"
+				expects, rawExpects = Yellow+formatArg("value", default_)+Gray, "<value>"
 			} else {
-				expects, rawExpects = Yellow+"<value>"+Reset, "<value>"
+				expects, rawExpects = formatArg("value", nil), "<value>"
 			}
 		} else {
 			rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
@@ -257,6 +257,12 @@ func repr(v any) string {
 	// 	return fmt.Sprintf("%v", val)
 	// }
 }
+func formatArg(name string, default_ any) string {
+	if default_ != nil {
+		return Yellow + "<" + Cyan + name + Yellow + "=" + Blue + repr(default_) + Yellow + ">" + Reset
+	}
+	return Yellow + "<" + Cyan + name + Yellow + ">" + Reset
+}
 
 // formatExample generates a dummy usage string based on the definition
 func formatExample(def ArgumentData) string {
@@ -279,10 +285,7 @@ func formatExample(def ArgumentData) string {
 		if index < len(def.Default) {
 			default_ = def.Default[index]
 		}
-		if default_ != nil {
-			return Yellow + "<" + Cyan + name + Yellow + "=" + Blue + repr(default_) + Yellow + ">" + Reset
-		}
-		return Yellow + "<" + Cyan + name + Yellow + ">" + Reset
+		return formatArg(name, default_)
 	}
 
 	if def.VarArgs {
