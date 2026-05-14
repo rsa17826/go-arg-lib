@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -21,6 +22,14 @@ type ArgumentData struct {
 
 type ParseOptions struct {
 	DisableDefaultHelp bool
+}
+
+var alsoParseData map[string][]ArgumentData
+var help bool
+
+func AlsoParse(argData []ArgumentData) {
+	alsoParseData[getCallerPackageName()] = argData
+	return
 }
 
 func assign(target any, value any) {
@@ -65,6 +74,40 @@ func assign(target any, value any) {
 	}
 }
 
+func getCallerPackageName() string {
+	// 0: getCallerPackageName
+	// 1: AlsoParse
+	// 2: The actual library calling AlsoParse
+	pc, _, _, ok := runtime.Caller(2)
+	if !ok {
+		return "unknown"
+	}
+
+	details := runtime.FuncForPC(pc)
+	if details == nil {
+		return "unknown"
+	}
+
+	// FullName returns "path/to/pkg.FunctionName"
+	fullName := details.Name()
+
+	// We need to strip the function name and keep the package path
+	lastDot := strings.LastIndex(fullName, ".")
+	if lastDot == -1 {
+		return fullName
+	}
+
+	// Handle cases like "path/to/pkg.(*Type).Method"
+	pkgPath := fullName[:lastDot]
+	return pkgPath
+}
+
+func init() {
+	AlsoParse([]ArgumentData{{
+		Keys: []string{"help", "h"}, AfterCount: 0, Target: &help, Description: "shows help, add args to filter", VarArgs: true, AllowDupes: false,
+	}})
+}
+
 func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	args := os.Args[1:]
 	disableHelp := false
@@ -81,14 +124,8 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	}
 
 	// 2. Automatic Help Logic
-	if !disableHelp {
-		for i, arg := range args {
-			if matches([]string{"h", "help"}, arg) {
-				filter := args[i+1:]
-				PrintHelp(argDefinitions, filter)
-				os.Exit(0)
-			}
-		}
+	if disableHelp {
+		delete(alsoParseData, getCallerPackageName())
 	}
 	for i := range argDefinitions {
 		def := &argDefinitions[i]
