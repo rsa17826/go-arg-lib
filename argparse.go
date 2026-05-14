@@ -243,7 +243,7 @@ func EnsureParsed() {
 		// 4. Populate ReadOnly targets — these keys are owned by another package
 		//    so they were already consumed above, but we scan args again to wire
 		//    up any extra Target pointers the caller registered as ReadOnly.
-		println(repr(readOnlyArgs))
+		println(repr(readOnlyArgs), "parsing")
 		for i := 0; i < len(args); i++ {
 			for name, def := range readOnlyArgs {
 				println(repr(def), name)
