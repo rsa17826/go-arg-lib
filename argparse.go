@@ -17,6 +17,7 @@ type ArgumentData struct {
 	Description string
 	VarArgs     bool
 	AllowDupes  bool
+	ReadOnly    bool
 	ExampleArgs []string
 	Default     []any
 }
@@ -28,17 +29,31 @@ var parseOnce sync.Once
 // slice means the flag was present with no filter arguments.
 var helpArgs []string
 
+// readOnlyArgs holds definitions with ReadOnly:true — they participate in
+// parsing but are owned/displayed by another package so they are excluded
+// from ParseArgsData and therefore from help output.
+var readOnlyArgs []ArgumentData
+
 // ParseArgs registers a library's argument definitions so they are included in
 // parsing and help output. It MUST be called from an init() function — never
 // from a regular function. Go guarantees all init() calls complete before any
 // non-init code runs, which means EnsureParsed (however it is triggered) will
 // always see every registered package's definitions, regardless of call order.
 //
-// Calling ParseArgs outside of init() creates a race: EnsureParsed could fire
-// before the late registration, silently dropping those options from parsing
-// and help output.
+// Definitions with ReadOnly:true are stripped out before registration: they
+// are owned and displayed by another package, so they won't appear in help
+// under the caller's section, but their Target will still be populated during
+// parsing just like any other definition.
 func ParseArgs(argData []ArgumentData) {
-	ParseArgsData[getCallerPackageName()] = argData
+	regular := []ArgumentData{}
+	for _, d := range argData {
+		if d.ReadOnly {
+			readOnlyArgs = append(readOnlyArgs, d)
+		} else {
+			regular = append(regular, d)
+		}
+	}
+	ParseArgsData[getCallerPackageName()] = regular
 }
 
 func assign(target any, value any) {
@@ -108,7 +123,7 @@ func getCallerPackageName() string {
 
 	// Handle cases like "path/to/pkg.(*Type).Method"
 	pkgPath := fullName[:lastDot]
-	return pkgPath
+	return strings.ReplaceAll(pkgPath, ".init", "")
 }
 
 func init() {
@@ -165,7 +180,7 @@ func EnsureParsed() {
 					found = true
 
 					if def.VarArgs {
-						values, newI := collectVarArgs(args, i+1, def.AfterCount, ParseArgsData["MAIN"])
+						values, newI := collectVarArgs(args, i+1, def.AfterCount, ParseArgsData["main"])
 						if def.AllowDupes {
 							if t, ok := def.Target.(*[]string); ok {
 								*t = append(*t, values...)
@@ -223,7 +238,31 @@ func EnsureParsed() {
 			}
 		}
 
-		// 4. Help check — helpArgs is non-nil only when --help/-h was passed.
+		// 4. Populate ReadOnly targets — these keys are owned by another package
+		//    so they were already consumed above, but we scan args again to wire
+		//    up any extra Target pointers the caller registered as ReadOnly.
+		for i := 0; i < len(args); i++ {
+			for _, def := range readOnlyArgs {
+				if !matches(def.Keys, args[i]) {
+					continue
+				}
+				if def.AfterCount == 0 {
+					if t, ok := def.Target.(*bool); ok {
+						*t = true
+					}
+				} else if def.AfterCount == 1 && i+1 < len(args) {
+					if t, ok := def.Target.(*string); ok {
+						*t = args[i+1]
+					}
+				} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+					if t, ok := def.Target.(*[]string); ok {
+						*t = args[i+1 : i+1+def.AfterCount]
+					}
+				}
+			}
+		}
+
+		// 5. Help check — helpArgs is non-nil only when --help/-h was passed.
 		//    Because we're inside sync.Once, this runs at most once and only
 		//    after every registered package's options are already present.
 		if helpArgs != nil {
@@ -387,9 +426,9 @@ func PrintHelp(filters []string) {
 		}
 	}
 	println(Yellow + "Main" + Reset + " Usage Options:")
-	parseThisData(ParseArgsData["MAIN"])
+	parseThisData(ParseArgsData["main"])
 	for pkgName, defs := range ParseArgsData {
-		if pkgName == "MAIN" {
+		if pkgName == "main" {
 			continue
 		}
 		println(Yellow + pkgName + Reset + " Usage Options:" + Reset)
