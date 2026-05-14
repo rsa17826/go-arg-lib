@@ -265,7 +265,7 @@ const (
 )
 
 func PrintHelp(filters []string) {
-	fmt.Printf("%sUsage Options:%s\n", Bold, Reset)
+	// fmt.Printf("%sUsage Options:%s\n", Bold, Reset)
 
 	// Define column widths
 	const (
@@ -375,12 +375,13 @@ func PrintHelp(filters []string) {
 			}
 		}
 	}
+	println(Bold + Yellow + "Main" + Reset + " Usage Options:")
 	parseThisData(alsoParseData["MAIN"])
 	for pkgName, defs := range alsoParseData {
 		if pkgName == "MAIN" {
 			continue
 		}
-		println(Yellow + pkgName + Reset + " Usage Options:")
+		println(Bold + Yellow + pkgName + Reset + Bold + " Usage Options:" + Reset)
 		parseThisData(defs)
 	}
 }
