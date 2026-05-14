@@ -28,7 +28,6 @@ var alsoParseData = make(map[string][]ArgumentData)
 var help bool
 
 func AlsoParse(argData []ArgumentData) {
-	println("getCallerPackageName", getCallerPackageName())
 	alsoParseData[getCallerPackageName()] = argData
 }
 
@@ -109,6 +108,7 @@ func init() {
 }
 
 func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
+	alsoParseData["MAIN"] = argDefinitions
 	args := os.Args[1:]
 	disableHelp := false
 	if len(opts) > 0 && opts[0].DisableDefaultHelp {
@@ -149,70 +149,72 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	// 3. Parsing Logic
 	for i := 0; i < len(args); {
 		found := false
-		for _, def := range argDefinitions {
-			if !matches(def.Keys, args[i]) {
-				continue
-			}
-			found = true
+		for _, argSlice := range alsoParseData {
+			for _, def := range argSlice {
+				if !matches(def.Keys, args[i]) {
+					continue
+				}
+				found = true
 
-			if def.VarArgs {
-				// Collect at least AfterCount values, then keep consuming
-				// tokens that don't look like a registered flag.
-				values, newI := collectVarArgs(args, i+1, def.AfterCount, argDefinitions)
-				if def.AllowDupes {
-					// Append this invocation's values to whatever was there before.
-					if t, ok := def.Target.(*[]string); ok {
-						*t = append(*t, values...)
+				if def.VarArgs {
+					// Collect at least AfterCount values, then keep consuming
+					// tokens that don't look like a registered flag.
+					values, newI := collectVarArgs(args, i+1, def.AfterCount, argDefinitions)
+					if def.AllowDupes {
+						// Append this invocation's values to whatever was there before.
+						if t, ok := def.Target.(*[]string); ok {
+							*t = append(*t, values...)
+						}
+					} else {
+						if t, ok := def.Target.(*[]string); ok {
+							*t = values
+						}
 					}
-				} else {
-					if t, ok := def.Target.(*[]string); ok {
-						*t = values
+					i = newI
+				} else if def.AllowDupes {
+					if def.AfterCount == 0 {
+						// No value expected — count occurrences.
+						if t, ok := def.Target.(*int); ok {
+							*t++
+						}
+						i++
+					} else if def.AfterCount == 1 && i+1 < len(args) {
+						if t, ok := def.Target.(*[]string); ok {
+							*t = append(*t, args[i+1])
+						}
+						i += 2
+					} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+						if t, ok := def.Target.(*[]string); ok {
+							*t = append(*t, args[i+1:i+1+def.AfterCount]...)
+						}
+						i += 1 + def.AfterCount
+					} else {
+						i++
 					}
-				}
-				i = newI
-			} else if def.AllowDupes {
-				if def.AfterCount == 0 {
-					// No value expected — count occurrences.
-					if t, ok := def.Target.(*int); ok {
-						*t++
-					}
-					i++
-				} else if def.AfterCount == 1 && i+1 < len(args) {
-					if t, ok := def.Target.(*[]string); ok {
-						*t = append(*t, args[i+1])
-					}
-					i += 2
-				} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
-					if t, ok := def.Target.(*[]string); ok {
-						*t = append(*t, args[i+1:i+1+def.AfterCount]...)
-					}
-					i += 1 + def.AfterCount
-				} else {
-					i++
-				}
 
-			} else {
-				// Original single-use logic.
-				if def.AfterCount == 0 {
-					if t, ok := def.Target.(*bool); ok {
-						*t = true
-					}
-					i++
-				} else if def.AfterCount == 1 && i+1 < len(args) {
-					if t, ok := def.Target.(*string); ok {
-						*t = args[i+1]
-					}
-					i += 2
-				} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
-					if t, ok := def.Target.(*[]string); ok {
-						*t = args[i+1 : i+1+def.AfterCount]
-					}
-					i += 1 + def.AfterCount
 				} else {
-					i++
+					// Original single-use logic.
+					if def.AfterCount == 0 {
+						if t, ok := def.Target.(*bool); ok {
+							*t = true
+						}
+						i++
+					} else if def.AfterCount == 1 && i+1 < len(args) {
+						if t, ok := def.Target.(*string); ok {
+							*t = args[i+1]
+						}
+						i += 2
+					} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+						if t, ok := def.Target.(*[]string); ok {
+							*t = args[i+1 : i+1+def.AfterCount]
+						}
+						i += 1 + def.AfterCount
+					} else {
+						i++
+					}
 				}
+				break
 			}
-			break
 		}
 		if !found {
 			i++
@@ -262,7 +264,7 @@ const (
 	Gray   = "\033[90m"
 )
 
-func PrintHelp(defs []ArgumentData, filters []string) {
+func PrintHelp(filters []string) {
 	fmt.Printf("%sUsage Options:%s\n", Bold, Reset)
 
 	// Define column widths
@@ -274,103 +276,117 @@ func PrintHelp(defs []ArgumentData, filters []string) {
 	// Headers
 	fmt.Printf("  %-*s %-*s %s\n", col1Width, "FLAGS", col2Width, "EXPECTS", "DESCRIPTION")
 	fmt.Printf("  %s%s\n%s", Gray, strings.Repeat("-", col1Width+col2Width+13+20), Reset)
-
-	for _, def := range defs {
-		// 1. Build Key String (with colors)
-		keysFormatted := []string{}
-		rawKeysLen := 0
-		for i, k := range def.Keys {
-			p := "-"
-			if len(k) > 1 {
-				p = "--"
-			}
-			keysFormatted = append(keysFormatted, Cyan+p+k+Reset)
-			rawKeysLen += len(p) + len(k)
-			if i < len(def.Keys)-1 {
-				rawKeysLen += 2 // for ", "
-			}
-		}
-		keysStr := strings.Join(keysFormatted, ", ")
-
-		// 2. Build Expects String (with colors)
-		var expects, rawExpects string
-		if def.VarArgs {
-			expects, rawExpects = Yellow+"<val1>...<valN>"+Reset, "<val1>...<valN>"
-		} else if def.AfterCount == 0 {
-			expects, rawExpects = Blue+"[flag]"+Reset, "[flag]"
-		} else {
-			noDataCounter := 0
-			for i := range def.AfterCount {
-				name := "value"
-				var default_ any = nil
-				var dataFound = false
-				if i > 0 {
-					expects += " "
-					rawExpects += " "
+	parseThisData := func(defs []ArgumentData) {
+		for _, def := range defs {
+			// 1. Build Key String (with colors)
+			keysFormatted := []string{}
+			rawKeysLen := 0
+			for i, k := range def.Keys {
+				p := "-"
+				if len(k) > 1 {
+					p = "--"
 				}
-				if i < len(def.ExampleArgs) {
-					dataFound = true
-					if noDataCounter > 0 {
-						if noDataCounter == 1 {
-							expects += Yellow + "<1 value>" + Reset
-							rawExpects += "<1 value>"
-						} else {
-							expects += fmt.Sprintf("%s<%d values>%s", Yellow, noDataCounter, Reset)
-							rawExpects += fmt.Sprintf("<%d values>", noDataCounter)
-							noDataCounter = 0
+				keysFormatted = append(keysFormatted, Cyan+p+k+Reset)
+				rawKeysLen += len(p) + len(k)
+				if i < len(def.Keys)-1 {
+					rawKeysLen += 2 // for ", "
+				}
+			}
+			keysStr := strings.Join(keysFormatted, ", ")
+
+			// 2. Build Expects String (with colors)
+			var expects, rawExpects string
+			if def.VarArgs {
+				expects, rawExpects = Yellow+"<val1>...<valN>"+Reset, "<val1>...<valN>"
+			} else if def.AfterCount == 0 {
+				expects, rawExpects = Blue+"[flag]"+Reset, "[flag]"
+			} else {
+				noDataCounter := 0
+				for i := range def.AfterCount {
+					name := "value"
+					var default_ any = nil
+					var dataFound = false
+					if i > 0 {
+						expects += " "
+						rawExpects += " "
+					}
+					if i < len(def.ExampleArgs) {
+						dataFound = true
+						if noDataCounter > 0 {
+							if noDataCounter == 1 {
+								expects += Yellow + "<1 value>" + Reset
+								rawExpects += "<1 value>"
+							} else {
+								expects += fmt.Sprintf("%s<%d values>%s", Yellow, noDataCounter, Reset)
+								rawExpects += fmt.Sprintf("<%d values>", noDataCounter)
+								noDataCounter = 0
+							}
 						}
+						name = def.ExampleArgs[i]
 					}
-					name = def.ExampleArgs[i]
-				}
-				if i < len(def.Default) {
-					dataFound = true
-					default_ = def.Default[i]
-				}
-				if dataFound {
-					if default_ != nil {
-						expects += formatArg(""+name+"", default_)
-						rawExpects += "<" + name + "=" + repr(default_) + ">"
+					if i < len(def.Default) {
+						dataFound = true
+						default_ = def.Default[i]
+					}
+					if dataFound {
+						if default_ != nil {
+							expects += formatArg(""+name+"", default_)
+							rawExpects += "<" + name + "=" + repr(default_) + ">"
+						} else {
+							expects += formatArg(""+name+"", nil)
+							rawExpects += "<" + name + ">"
+						}
 					} else {
-						expects += formatArg(""+name+"", nil)
-						rawExpects += "<" + name + ">"
+						noDataCounter += 1
 					}
-				} else {
-					noDataCounter += 1
 				}
 			}
-		}
-		//  else {
-		// 	// rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
-		// 	// expects = Yellow + rawExpects + Reset
-		// }
+			//  else {
+			// 	// rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
+			// 	// expects = Yellow + rawExpects + Reset
+			// }
 
-		// 3. Filtering logic
-		if len(filters) > 0 {
-			match := false
-			fullKeyMatch := strings.Join(def.Keys, " ")
-			for _, f := range filters {
-				if strings.Contains(fullKeyMatch, f) || strings.Contains(strings.ToLower(def.Description), strings.ToLower(f)) {
-					match = true
-					break
+			// 3. Filtering logic
+			if len(filters) > 0 {
+				match := false
+				fullKeyMatch := strings.Join(def.Keys, " ")
+				for _, f := range filters {
+					if strings.Contains(fullKeyMatch, f) || strings.Contains(strings.ToLower(def.Description), strings.ToLower(f)) {
+						match = true
+						break
+					}
+				}
+				if !match {
+					continue
 				}
 			}
-			if !match {
-				continue
+
+			// 4. PRINTING WITH MANUAL PADDING
+			// We subtract the "invisible" color bytes by calculating the difference
+			// between the colored string length and the plain text length.
+			kPadding := col1Width + (len(keysStr) - rawKeysLen)
+			ePadding := col2Width + (len(expects) - len(rawExpects))
+
+			fmt.Printf("  %-*s %-*s %s\n", kPadding, keysStr, ePadding, expects, def.Description)
+
+			// 5. Example Row
+			if def.AllowDupes || def.VarArgs || def.AfterCount > 1 || len(def.ExampleArgs) > 0 || len(def.Default) > 0 {
+				fmt.Printf("    %sExample:\n    %s%s\n", Gray, formatExample(def), Reset)
 			}
 		}
-
-		// 4. PRINTING WITH MANUAL PADDING
-		// We subtract the "invisible" color bytes by calculating the difference
-		// between the colored string length and the plain text length.
-		kPadding := col1Width + (len(keysStr) - rawKeysLen)
-		ePadding := col2Width + (len(expects) - len(rawExpects))
-
-		fmt.Printf("  %-*s %-*s %s\n", kPadding, keysStr, ePadding, expects, def.Description)
-
-		// 5. Example Row
-		if def.AllowDupes || def.VarArgs || def.AfterCount > 1 || len(def.ExampleArgs) > 0 || len(def.Default) > 0 {
-			fmt.Printf("    %sExample:\n    %s%s\n", Gray, formatExample(def), Reset)
+	}
+	parseThisData(alsoParseData["MAIN"])
+	firstLibPackage := false
+	for pkgName, defs := range alsoParseData {
+		if pkgName == "MAIN" {
+			continue
 		}
+		if !firstLibPackage {
+			firstLibPackage = true
+			println("Lib Usage Options:")
+		}
+		println(pkgName + " Usage Options:")
+		parseThisData(defs)
 	}
 }
 
