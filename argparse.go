@@ -47,13 +47,11 @@ var readOnlyArgs []ArgumentData
 func ParseArgs(argData []ArgumentData) {
 	regular := []ArgumentData{}
 	for _, d := range argData {
-		println(d.ReadOnly)
 		if d.ReadOnly {
 			readOnlyArgs = append(readOnlyArgs, d)
 		} else {
 			regular = append(regular, d)
 		}
-		println(repr(readOnlyArgs))
 	}
 	ParseArgsData[getCallerPackageName()] = regular
 }
