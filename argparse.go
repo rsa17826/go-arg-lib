@@ -108,8 +108,11 @@ func init() {
 		VarArgs:     true,
 		AllowDupes:  false,
 	}}, getCallerPackageName())
+	println("argparse1")
 	go func() {
+		println("argparse2")
 		runtime.Gosched()
+		println("argparse3")
 		mu.RLock()
 		args := os.Args[1:]
 
