@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 )
 
 type ArgumentData struct {
@@ -21,8 +22,21 @@ type ArgumentData struct {
 }
 
 var alsoParseData = make(map[string][]ArgumentData)
-var help bool
+var parseOnce sync.Once
 
+// helpArgs is nil until --help/-h is actually passed; an empty-but-non-nil
+// slice means the flag was present with no filter arguments.
+var helpArgs []string
+
+// AlsoParse registers a library's argument definitions so they are included in
+// parsing and help output. It MUST be called from an init() function — never
+// from a regular function. Go guarantees all init() calls complete before any
+// non-init code runs, which means EnsureParsed (however it is triggered) will
+// always see every registered package's definitions, regardless of call order.
+//
+// Calling AlsoParse outside of init() creates a race: EnsureParsed could fire
+// before the late registration, silently dropping those options from parsing
+// and help output.
 func AlsoParse(argData []ArgumentData) {
 	alsoParseData[getCallerPackageName()] = argData
 }
@@ -99,116 +113,157 @@ func getCallerPackageName() string {
 
 func init() {
 	AlsoParse([]ArgumentData{{
-		Keys: []string{"help", "h"}, AfterCount: 0, Target: &help, Description: "shows help, add args to filter", VarArgs: true, AllowDupes: false,
+		Keys:        []string{"help", "h"},
+		AfterCount:  0,
+		Target:      &helpArgs, // *[]string: nil = not passed, non-nil = passed
+		Description: "show help; optionally filter by keyword",
+		VarArgs:     true,
+		AllowDupes:  false,
 	}})
+
+	// Goroutines started during init() are runnable but not scheduled until
+	// the main goroutine yields — which only happens after every package's
+	// init() has completed. This means EnsureParsed fires automatically at
+	// the very start of main even when argparse is only an indirect dependency
+	// and main never calls ParseArgs or EnsureParsed itself.
+	//
+	// If any code calls EnsureParsed() before this goroutine is scheduled
+	// (e.g. a lib func called early in main), sync.Once makes this a no-op.
+	//
+	// Libraries reading parsed values must still call EnsureParsed() at the
+	// top of their own functions — this goroutine is the safety net for flags
+	// like --help that should work regardless of what main calls.
+	go EnsureParsed()
 }
 
-func ParseArgs(argDefinitions []ArgumentData) {
-	alsoParseData["MAIN"] = argDefinitions
-	args := os.Args[1:]
+// EnsureParsed triggers argument parsing exactly once, no matter how many
+// packages call it. It is safe to call from library code: because Go runs all
+// init() functions before main(), every AlsoParse registration is already
+// complete by the time any non-init code runs. Help is printed here (and the
+// process exits) so it always reflects the full set of registered options.
+//
+// Library usage pattern:
+//
+//	func MyLibFunc() {
+//	    argparse.EnsureParsed()
+//	    // now read your parsed values safely
+//	}
+func EnsureParsed() {
+	parseOnce.Do(func() {
+		args := os.Args[1:]
 
-	// 1. Handle "--" separator
-	for i, v := range args {
-		if v == "--" {
-			args = args[:i]
-			break
-		}
-	}
-
-	// 2. Automatic Help Logic
-	for i := range argDefinitions {
-		def := &argDefinitions[i]
-		if len(def.Default) > 0 {
-			targetKind := reflect.TypeOf(def.Target).Elem().Kind()
-
-			if targetKind != reflect.Slice && len(def.Default) > 0 {
-				assign(def.Target, def.Default[0])
-			} else {
-				assign(def.Target, def.Default)
-			}
-			// If AfterCount is 1, we want the first element of the Default slice
-			// if def.AfterCount <= 1 && !def.VarArgs {
-			// 	assign(def.Target, def.Default[0])
-			// } else {
-			// 	// If it's a slice target (AfterCount > 1 or VarArgs), assign the whole slice
-			// 	assign(def.Target, def.Default)
-			// }
-		}
-	}
-	// 3. Parsing Logic
-	for i := 0; i < len(args); {
-		found := false
-		for _, argSlice := range alsoParseData {
-			for _, def := range argSlice {
-				if !matches(def.Keys, args[i]) {
-					continue
-				}
-				found = true
-
-				if def.VarArgs {
-					// Collect at least AfterCount values, then keep consuming
-					// tokens that don't look like a registered flag.
-					values, newI := collectVarArgs(args, i+1, def.AfterCount, argDefinitions)
-					if def.AllowDupes {
-						// Append this invocation's values to whatever was there before.
-						if t, ok := def.Target.(*[]string); ok {
-							*t = append(*t, values...)
-						}
-					} else {
-						if t, ok := def.Target.(*[]string); ok {
-							*t = values
-						}
-					}
-					i = newI
-				} else if def.AllowDupes {
-					if def.AfterCount == 0 {
-						// No value expected — count occurrences.
-						if t, ok := def.Target.(*int); ok {
-							*t++
-						}
-						i++
-					} else if def.AfterCount == 1 && i+1 < len(args) {
-						if t, ok := def.Target.(*[]string); ok {
-							*t = append(*t, args[i+1])
-						}
-						i += 2
-					} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
-						if t, ok := def.Target.(*[]string); ok {
-							*t = append(*t, args[i+1:i+1+def.AfterCount]...)
-						}
-						i += 1 + def.AfterCount
-					} else {
-						i++
-					}
-
-				} else {
-					// Original single-use logic.
-					if def.AfterCount == 0 {
-						if t, ok := def.Target.(*bool); ok {
-							*t = true
-						}
-						i++
-					} else if def.AfterCount == 1 && i+1 < len(args) {
-						if t, ok := def.Target.(*string); ok {
-							*t = args[i+1]
-						}
-						i += 2
-					} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
-						if t, ok := def.Target.(*[]string); ok {
-							*t = args[i+1 : i+1+def.AfterCount]
-						}
-						i += 1 + def.AfterCount
-					} else {
-						i++
-					}
-				}
+		// 1. Handle "--" separator
+		for i, v := range args {
+			if v == "--" {
+				args = args[:i]
 				break
 			}
 		}
-		if !found {
-			i++
+
+		// 2. Apply defaults for every registered package.
+		for _, argSlice := range alsoParseData {
+			for i := range argSlice {
+				def := &argSlice[i]
+				if len(def.Default) == 0 {
+					continue
+				}
+				targetKind := reflect.TypeOf(def.Target).Elem().Kind()
+				if targetKind != reflect.Slice {
+					assign(def.Target, def.Default[0])
+				} else {
+					assign(def.Target, def.Default)
+				}
+			}
 		}
-	}
+
+		// 3. Parse — labeled break ensures a matched token is consumed by
+		//    exactly one definition across all registered packages.
+		for i := 0; i < len(args); {
+			found := false
+		argLoop:
+			for _, argSlice := range alsoParseData {
+				for _, def := range argSlice {
+					if !matches(def.Keys, args[i]) {
+						continue
+					}
+					found = true
+
+					if def.VarArgs {
+						values, newI := collectVarArgs(args, i+1, def.AfterCount, alsoParseData["MAIN"])
+						if def.AllowDupes {
+							if t, ok := def.Target.(*[]string); ok {
+								*t = append(*t, values...)
+							}
+						} else {
+							if t, ok := def.Target.(*[]string); ok {
+								*t = values
+							}
+						}
+						i = newI
+					} else if def.AllowDupes {
+						if def.AfterCount == 0 {
+							if t, ok := def.Target.(*int); ok {
+								*t++
+							}
+							i++
+						} else if def.AfterCount == 1 && i+1 < len(args) {
+							if t, ok := def.Target.(*[]string); ok {
+								*t = append(*t, args[i+1])
+							}
+							i += 2
+						} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+							if t, ok := def.Target.(*[]string); ok {
+								*t = append(*t, args[i+1:i+1+def.AfterCount]...)
+							}
+							i += 1 + def.AfterCount
+						} else {
+							i++
+						}
+					} else {
+						if def.AfterCount == 0 {
+							if t, ok := def.Target.(*bool); ok {
+								*t = true
+							}
+							i++
+						} else if def.AfterCount == 1 && i+1 < len(args) {
+							if t, ok := def.Target.(*string); ok {
+								*t = args[i+1]
+							}
+							i += 2
+						} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+							if t, ok := def.Target.(*[]string); ok {
+								*t = args[i+1 : i+1+def.AfterCount]
+							}
+							i += 1 + def.AfterCount
+						} else {
+							i++
+						}
+					}
+					break argLoop
+				}
+			}
+			if !found {
+				i++
+			}
+		}
+
+		// 4. Help check — helpArgs is non-nil only when --help/-h was passed.
+		//    Because we're inside sync.Once, this runs at most once and only
+		//    after every registered package's options are already present.
+		if helpArgs != nil {
+			PrintHelp(helpArgs)
+			os.Exit(0)
+		}
+	})
+}
+
+// ParseArgs registers the main package's argument definitions and then calls
+// EnsureParsed. This is the only entry point main should use; library packages
+// should call AlsoParse (in init) and EnsureParsed (before reading values).
+func ParseArgs(argDefinitions []ArgumentData) {
+	alsoParseData["MAIN"] = argDefinitions
+	alsoParseData[getCallerPackageName()] = argDefinitions
+	EnsureParsed()
 }
 
 // collectVarArgs collects at least minCount tokens starting at args[start],
