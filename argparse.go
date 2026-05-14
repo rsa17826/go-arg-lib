@@ -137,8 +137,7 @@ func init() {
 		VarArgs:     true,
 		AllowDupes:  false,
 	}})
-	var once sync.Once
-	once.Do(EnsureParsed)
+	go EnsureParsed()
 }
 
 func EnsureParsed() {
