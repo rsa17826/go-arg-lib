@@ -142,6 +142,7 @@ func init() {
 }
 
 func EnsureParsed() {
+	println(getCallerPackageName(), "parsing?")
 	parseOnce.Do(func() {
 		println(getCallerPackageName(), "parsing")
 		args := os.Args[1:]
