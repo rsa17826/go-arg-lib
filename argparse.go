@@ -21,24 +21,24 @@ type ArgumentData struct {
 	Default     []any
 }
 
-var alsoParseData = make(map[string][]ArgumentData)
+var ParseArgsData = make(map[string][]ArgumentData)
 var parseOnce sync.Once
 
 // helpArgs is nil until --help/-h is actually passed; an empty-but-non-nil
 // slice means the flag was present with no filter arguments.
 var helpArgs []string
 
-// AlsoParse registers a library's argument definitions so they are included in
+// ParseArgs registers a library's argument definitions so they are included in
 // parsing and help output. It MUST be called from an init() function — never
 // from a regular function. Go guarantees all init() calls complete before any
 // non-init code runs, which means EnsureParsed (however it is triggered) will
 // always see every registered package's definitions, regardless of call order.
 //
-// Calling AlsoParse outside of init() creates a race: EnsureParsed could fire
+// Calling ParseArgs outside of init() creates a race: EnsureParsed could fire
 // before the late registration, silently dropping those options from parsing
 // and help output.
-func AlsoParse(argData []ArgumentData) {
-	alsoParseData[getCallerPackageName()] = argData
+func ParseArgs(argData []ArgumentData) {
+	ParseArgsData[getCallerPackageName()] = argData
 }
 
 func assign(target any, value any) {
@@ -85,8 +85,8 @@ func assign(target any, value any) {
 
 func getCallerPackageName() string {
 	// 0: getCallerPackageName
-	// 1: AlsoParse
-	// 2: The actual library calling AlsoParse
+	// 1: ParseArgs
+	// 2: The actual library calling ParseArgs
 	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
 		return "unknown"
@@ -112,7 +112,7 @@ func getCallerPackageName() string {
 }
 
 func init() {
-	AlsoParse([]ArgumentData{{
+	ParseArgs([]ArgumentData{{
 		Keys:        []string{"help", "h"},
 		AfterCount:  0,
 		Target:      &helpArgs, // *[]string: nil = not passed, non-nil = passed
@@ -120,34 +120,12 @@ func init() {
 		VarArgs:     true,
 		AllowDupes:  false,
 	}})
-
-	// Goroutines started during init() are runnable but not scheduled until
-	// the main goroutine yields — which only happens after every package's
-	// init() has completed. This means EnsureParsed fires automatically at
-	// the very start of main even when argparse is only an indirect dependency
-	// and main never calls ParseArgs or EnsureParsed itself.
-	//
-	// If any code calls EnsureParsed() before this goroutine is scheduled
-	// (e.g. a lib func called early in main), sync.Once makes this a no-op.
-	//
-	// Libraries reading parsed values must still call EnsureParsed() at the
-	// top of their own functions — this goroutine is the safety net for flags
-	// like --help that should work regardless of what main calls.
-	go EnsureParsed()
 }
 
-// EnsureParsed triggers argument parsing exactly once, no matter how many
-// packages call it. It is safe to call from library code: because Go runs all
-// init() functions before main(), every AlsoParse registration is already
-// complete by the time any non-init code runs. Help is printed here (and the
-// process exits) so it always reflects the full set of registered options.
-//
-// Library usage pattern:
-//
-//	func MyLibFunc() {
-//	    argparse.EnsureParsed()
-//	    // now read your parsed values safely
-//	}
+func main() {
+	EnsureParsed()
+}
+
 func EnsureParsed() {
 	parseOnce.Do(func() {
 		args := os.Args[1:]
@@ -161,7 +139,7 @@ func EnsureParsed() {
 		}
 
 		// 2. Apply defaults for every registered package.
-		for _, argSlice := range alsoParseData {
+		for _, argSlice := range ParseArgsData {
 			for i := range argSlice {
 				def := &argSlice[i]
 				if len(def.Default) == 0 {
@@ -181,7 +159,7 @@ func EnsureParsed() {
 		for i := 0; i < len(args); {
 			found := false
 		argLoop:
-			for _, argSlice := range alsoParseData {
+			for _, argSlice := range ParseArgsData {
 				for _, def := range argSlice {
 					if !matches(def.Keys, args[i]) {
 						continue
@@ -189,7 +167,7 @@ func EnsureParsed() {
 					found = true
 
 					if def.VarArgs {
-						values, newI := collectVarArgs(args, i+1, def.AfterCount, alsoParseData["MAIN"])
+						values, newI := collectVarArgs(args, i+1, def.AfterCount, ParseArgsData["MAIN"])
 						if def.AllowDupes {
 							if t, ok := def.Target.(*[]string); ok {
 								*t = append(*t, values...)
@@ -255,15 +233,6 @@ func EnsureParsed() {
 			os.Exit(0)
 		}
 	})
-}
-
-// ParseArgs registers the main package's argument definitions and then calls
-// EnsureParsed. This is the only entry point main should use; library packages
-// should call AlsoParse (in init) and EnsureParsed (before reading values).
-func ParseArgs(argDefinitions []ArgumentData) {
-	alsoParseData["MAIN"] = argDefinitions
-	alsoParseData[getCallerPackageName()] = argDefinitions
-	EnsureParsed()
 }
 
 // collectVarArgs collects at least minCount tokens starting at args[start],
@@ -420,8 +389,8 @@ func PrintHelp(filters []string) {
 		}
 	}
 	println(Yellow + "Main" + Reset + " Usage Options:")
-	parseThisData(alsoParseData["MAIN"])
-	for pkgName, defs := range alsoParseData {
+	parseThisData(ParseArgsData["MAIN"])
+	for pkgName, defs := range ParseArgsData {
 		if pkgName == "MAIN" {
 			continue
 		}
