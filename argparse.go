@@ -138,7 +138,34 @@ func init() {
 	go EnsureParsed()
 }
 
+// waitForInits spins until goroutine 1 (the main goroutine) is no longer
+// executing init functions. All init() calls in every package run on goroutine
+// 1 sequentially, so once its stack no longer contains ".init." the entire
+// init phase is guaranteed to be complete and ParseArgsData is fully populated.
+// runtime.Gosched() yields between checks so this burns virtually no CPU.
+func waitForInits() {
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		stack := string(buf[:n])
+		// Goroutine 1's section starts at the top; find where it ends.
+		const g1prefix = "goroutine 1 "
+		g1end := strings.Index(stack[len(g1prefix):], "\ngoroutine ")
+		var g1stack string
+		if g1end == -1 {
+			g1stack = stack
+		} else {
+			g1stack = stack[:len(g1prefix)+g1end]
+		}
+		if !strings.Contains(g1stack, ".init.") {
+			return
+		}
+		runtime.Gosched()
+	}
+}
+
 func EnsureParsed() {
+	waitForInits()
 	parseOnce.Do(func() {
 		args := os.Args[1:]
 
