@@ -243,7 +243,7 @@ func EnsureParsed() {
 		//    up any extra Target pointers the caller registered as ReadOnly.
 		for i := 0; i < len(args); i++ {
 			for name, def := range readOnlyArgs {
-				println(def, name)
+				println(repr(def), name)
 				if !matches(def.Keys, args[i]) {
 					continue
 				}
