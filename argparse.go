@@ -20,10 +20,6 @@ type ArgumentData struct {
 	Default     []any
 }
 
-type ParseOptions struct {
-	DisableDefaultHelp bool
-}
-
 var alsoParseData = make(map[string][]ArgumentData)
 var help bool
 
@@ -107,13 +103,9 @@ func init() {
 	}})
 }
 
-func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
+func ParseArgs(argDefinitions []ArgumentData) {
 	alsoParseData["MAIN"] = argDefinitions
 	args := os.Args[1:]
-	disableHelp := false
-	if len(opts) > 0 && opts[0].DisableDefaultHelp {
-		disableHelp = true
-	}
 
 	// 1. Handle "--" separator
 	for i, v := range args {
@@ -124,9 +116,6 @@ func ParseArgs(argDefinitions []ArgumentData, opts ...ParseOptions) {
 	}
 
 	// 2. Automatic Help Logic
-	if disableHelp {
-		delete(alsoParseData, getCallerPackageName())
-	}
 	for i := range argDefinitions {
 		def := &argDefinitions[i]
 		if len(def.Default) > 0 {
