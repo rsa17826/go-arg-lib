@@ -53,6 +53,7 @@ func ParseArgs(argData []ArgumentData) {
 		} else {
 			regular = append(regular, d)
 		}
+		println(repr(readOnlyArgs))
 	}
 	ParseArgsData[getCallerPackageName()] = regular
 }
