@@ -143,6 +143,7 @@ func init() {
 
 func EnsureParsed() {
 	parseOnce.Do(func() {
+		println(getCallerPackageName(), "parsing")
 		args := os.Args[1:]
 
 		// 1. Handle "--" separator
