@@ -376,16 +376,11 @@ func PrintHelp(filters []string) {
 		}
 	}
 	parseThisData(alsoParseData["MAIN"])
-	firstLibPackage := false
 	for pkgName, defs := range alsoParseData {
 		if pkgName == "MAIN" {
 			continue
 		}
-		if !firstLibPackage {
-			firstLibPackage = true
-			println("Lib Usage Options:")
-		}
-		println(pkgName + " Usage Options:")
+		println(Yellow + pkgName + Reset + " Usage Options:")
 		parseThisData(defs)
 	}
 }
