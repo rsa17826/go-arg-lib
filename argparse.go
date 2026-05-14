@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	_ "unsafe"
+	"time"
 )
 
 type ArgumentData struct {
@@ -25,18 +25,157 @@ type ArgumentData struct {
 var (
 	ParseArgsData = make(map[string][]ArgumentData)
 	mu            sync.RWMutex
-	done          = make(chan struct{}) // The blocking signal
-)
-var helpArgs []string
 
-func ParseArgs(argData []ArgumentData) {
-	_ParseArgs(argData, getCallerPackageName())
-	<-done
-}
-func _ParseArgs(argData []ArgumentData, caller string) {
+	cachedArgs []string // os.Args[1:] stripped of everything after --
+
+	helpArgs    []string
+	helpTimerMu sync.Mutex
+	helpTimer   *time.Timer
+)
+
+func init() {
+	cachedArgs = os.Args[1:]
+	for i, v := range cachedArgs {
+		if v == "--" {
+			cachedArgs = cachedArgs[:i]
+			break
+		}
+	}
+
+	helpDef := []ArgumentData{{
+		Keys:        []string{"help", "h"},
+		Target:      &helpArgs,
+		Description: "show help; optionally filter by keyword",
+		VarArgs:     true,
+		AllowDupes:  false,
+	}}
 	mu.Lock()
-	defer mu.Unlock()
+	ParseArgsData[getCallerPackageName()] = helpDef
+	mu.Unlock()
+
+	applyDefaults(helpDef)
+	parseForDefs(cachedArgs, helpDef)
+	maybeScheduleHelp()
+}
+
+// ParseArgs registers argData for the calling package, immediately parses
+// os.Args for those keys, and returns. It never blocks.
+// Any number of packages may call this from init() in any order.
+func ParseArgs(argData []ArgumentData) {
+	caller := getCallerPackageName()
+
+	mu.Lock()
 	ParseArgsData[caller] = argData
+	mu.Unlock()
+
+	applyDefaults(argData)
+	parseForDefs(cachedArgs, argData)
+	maybeScheduleHelp()
+}
+
+// maybeScheduleHelp arms (or resets) a short timer that prints help and exits.
+// The timer resets on every ParseArgs call, so it only fires after the last
+// caller has registered — by which point all init()s are done.
+// This path is only entered when --help/-h is actually in os.Args.
+func maybeScheduleHelp() {
+	if helpArgs == nil {
+		return
+	}
+	helpTimerMu.Lock()
+	defer helpTimerMu.Unlock()
+	if helpTimer != nil {
+		helpTimer.Reset(5 * time.Millisecond)
+	} else {
+		helpTimer = time.AfterFunc(5*time.Millisecond, func() {
+			mu.RLock()
+			defer mu.RUnlock()
+			PrintHelp(helpArgs)
+			os.Exit(0)
+		})
+	}
+}
+
+func applyDefaults(defs []ArgumentData) {
+	for i := range defs {
+		def := &defs[i]
+		if len(def.Default) == 0 {
+			continue
+		}
+		targetKind := reflect.TypeOf(def.Target).Elem().Kind()
+		if targetKind != reflect.Slice {
+			assign(def.Target, def.Default[0])
+		} else {
+			assign(def.Target, def.Default)
+		}
+	}
+}
+
+func parseForDefs(args []string, defs []ArgumentData) {
+	for i := 0; i < len(args); {
+		found := false
+		for _, def := range defs {
+			if !matches(def.Keys, args[i]) {
+				continue
+			}
+			found = true
+
+			if def.VarArgs {
+				values, newI := collectVarArgs(args, i+1, def.AfterCount, defs)
+				if def.AllowDupes {
+					if t, ok := def.Target.(*[]string); ok {
+						*t = append(*t, values...)
+					}
+				} else {
+					if t, ok := def.Target.(*[]string); ok {
+						*t = values
+					}
+				}
+				i = newI
+			} else if def.AllowDupes {
+				if def.AfterCount == 0 {
+					if t, ok := def.Target.(*int); ok {
+						*t++
+					}
+					i++
+				} else if def.AfterCount == 1 && i+1 < len(args) {
+					if t, ok := def.Target.(*[]string); ok {
+						*t = append(*t, args[i+1])
+					}
+					i += 2
+				} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+					if t, ok := def.Target.(*[]string); ok {
+						*t = append(*t, args[i+1:i+1+def.AfterCount]...)
+					}
+					i += 1 + def.AfterCount
+				} else {
+					i++
+				}
+			} else {
+				if def.AfterCount == 0 {
+					if t, ok := def.Target.(*bool); ok {
+						*t = true
+					}
+					i++
+				} else if def.AfterCount == 1 && i+1 < len(args) {
+					if t, ok := def.Target.(*string); ok {
+						*t = args[i+1]
+					}
+					i += 2
+				} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
+					if t, ok := def.Target.(*[]string); ok {
+						*t = args[i+1 : i+1+def.AfterCount]
+					}
+					i += 1 + def.AfterCount
+				} else {
+					i++
+				}
+			}
+			break
+		}
+		if !found {
+			i++
+		}
+	}
 }
 
 func assign(target any, value any) {
@@ -57,11 +196,9 @@ func assign(target any, value any) {
 		newSlice := reflect.MakeSlice(targetElem.Type(), val.Len(), val.Len())
 		for i := 0; i < val.Len(); i++ {
 			item := val.Index(i)
-
 			if item.Kind() == reflect.Interface {
 				item = item.Elem()
 			}
-
 			targetType := targetElem.Type().Elem()
 			if item.Type().ConvertibleTo(targetType) {
 				newSlice.Index(i).Set(item.Convert(targetType))
@@ -83,143 +220,16 @@ func getCallerPackageName() string {
 	if !ok {
 		return "unknown"
 	}
-
 	details := runtime.FuncForPC(pc)
 	if details == nil {
 		return "unknown"
 	}
-
 	fullName := details.Name()
-
 	lastDot := strings.LastIndex(fullName, ".")
 	if lastDot == -1 {
 		return fullName
 	}
-
-	pkgPath := fullName[:lastDot]
-	return pkgPath
-}
-
-//go:linkname mainInitDone runtime.main_init_done
-var mainInitDone chan bool
-
-func init() {
-	_ParseArgs([]ArgumentData{{
-		Keys:        []string{"help", "h"},
-		AfterCount:  0,
-		Target:      &helpArgs,
-		Description: "show help; optionally filter by keyword",
-		VarArgs:     true,
-		AllowDupes:  false,
-	}}, getCallerPackageName())
-	println("argparse1")
-	go func() {
-		println("argparse2")
-		<-mainInitDone
-		println("argparse3")
-		mu.RLock()
-		args := os.Args[1:]
-
-		for i, v := range args {
-			if v == "--" {
-				args = args[:i]
-				break
-			}
-		}
-
-		for _, argSlice := range ParseArgsData {
-			for i := range argSlice {
-				def := &argSlice[i]
-				if len(def.Default) == 0 {
-					continue
-				}
-				targetKind := reflect.TypeOf(def.Target).Elem().Kind()
-				if targetKind != reflect.Slice {
-					assign(def.Target, def.Default[0])
-				} else {
-					assign(def.Target, def.Default)
-				}
-			}
-		}
-
-		for i := 0; i < len(args); {
-			found := false
-		argLoop:
-			for _, argSlice := range ParseArgsData {
-				for _, def := range argSlice {
-					if !matches(def.Keys, args[i]) {
-						continue
-					}
-					found = true
-
-					if def.VarArgs {
-						values, newI := collectVarArgs(args, i+1, def.AfterCount, ParseArgsData["MAIN"])
-						if def.AllowDupes {
-							if t, ok := def.Target.(*[]string); ok {
-								*t = append(*t, values...)
-							}
-						} else {
-							if t, ok := def.Target.(*[]string); ok {
-								*t = values
-							}
-						}
-						i = newI
-					} else if def.AllowDupes {
-						if def.AfterCount == 0 {
-							if t, ok := def.Target.(*int); ok {
-								*t++
-							}
-							i++
-						} else if def.AfterCount == 1 && i+1 < len(args) {
-							if t, ok := def.Target.(*[]string); ok {
-								*t = append(*t, args[i+1])
-							}
-							i += 2
-						} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
-							if t, ok := def.Target.(*[]string); ok {
-								*t = append(*t, args[i+1:i+1+def.AfterCount]...)
-							}
-							i += 1 + def.AfterCount
-						} else {
-							i++
-						}
-					} else {
-						if def.AfterCount == 0 {
-							if t, ok := def.Target.(*bool); ok {
-								*t = true
-							}
-							i++
-						} else if def.AfterCount == 1 && i+1 < len(args) {
-							if t, ok := def.Target.(*string); ok {
-								*t = args[i+1]
-							}
-							i += 2
-						} else if def.AfterCount > 1 && i+def.AfterCount < len(args) {
-							if t, ok := def.Target.(*[]string); ok {
-								*t = args[i+1 : i+1+def.AfterCount]
-							}
-							i += 1 + def.AfterCount
-						} else {
-							i++
-						}
-					}
-					break argLoop
-				}
-			}
-			if !found {
-				i++
-			}
-		}
-
-		if helpArgs != nil {
-			PrintHelp(helpArgs)
-			os.Exit(0)
-		}
-		mu.RUnlock()
-
-		// Signal everyone that parsing is finished
-		close(done)
-	}()
+	return fullName[:lastDot]
 }
 
 func collectVarArgs(args []string, start, minCount int, allDefs []ArgumentData) ([]string, int) {
@@ -266,6 +276,7 @@ func PrintHelp(filters []string) {
 
 	fmt.Printf("  %-*s %-*s %s\n", col1Width, "FLAGS", col2Width, "EXPECTS", "DESCRIPTION")
 	fmt.Printf("  %s%s\n%s", Gray, strings.Repeat("-", col1Width+col2Width+13+20), Reset)
+
 	parseThisData := func(defs []ArgumentData) {
 		for _, def := range defs {
 			keysFormatted := []string{}
@@ -318,10 +329,10 @@ func PrintHelp(filters []string) {
 					}
 					if dataFound {
 						if default_ != nil {
-							expects += formatArg(""+name+"", default_)
+							expects += formatArg(name, default_)
 							rawExpects += "<" + name + "=" + repr(default_) + ">"
 						} else {
-							expects += formatArg(""+name+"", nil)
+							expects += formatArg(name, nil)
 							rawExpects += "<" + name + ">"
 						}
 					} else {
@@ -354,6 +365,7 @@ func PrintHelp(filters []string) {
 			}
 		}
 	}
+
 	println(Yellow + "Main" + Reset + " Usage Options:")
 	parseThisData(ParseArgsData["MAIN"])
 	for pkgName, defs := range ParseArgsData {
@@ -370,8 +382,8 @@ func repr(v any) string {
 		return "nil"
 	}
 	return fmt.Sprintf("%#v", v)
-
 }
+
 func formatArg(name string, default_ any) string {
 	if default_ != nil {
 		return Yellow + "<" + Cyan + name + Yellow + "=" + Blue + repr(default_) + Yellow + ">" + Reset
@@ -385,7 +397,6 @@ func formatExample(def ArgumentData) string {
 		p = "--"
 	}
 	rawKey := p + def.Keys[0]
-
 	coloredKey := Blue + rawKey + Gray
 
 	getValName := func(index int) string {
@@ -414,16 +425,14 @@ func formatExample(def ArgumentData) string {
 	}
 
 	if def.AllowDupes && def.AfterCount == 0 {
-		return fmt.Sprintf("%s %s %s (counts occurrences)",
-			coloredKey, coloredKey, coloredKey)
+		return fmt.Sprintf("%s %s %s (counts occurrences)", coloredKey, coloredKey, coloredKey)
 	}
 
 	if def.AllowDupes && def.AfterCount == 1 {
 		v1, v2 := getValName(0), getValName(1)
 		return fmt.Sprintf("%s %s %s %s", coloredKey, v1, coloredKey, v2)
 	} else if def.AfterCount == 1 {
-		v1 := getValName(0)
-		return fmt.Sprintf("%s %s", coloredKey, v1)
+		return fmt.Sprintf("%s %s", coloredKey, getValName(0))
 	}
 
 	if def.AfterCount > 1 {
