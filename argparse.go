@@ -21,24 +21,21 @@ type ArgumentData struct {
 	Default     []any
 }
 
-var ParseArgsData = make(map[string][]ArgumentData)
-var parseOnce sync.Once
-
-// helpArgs is nil until --help/-h is actually passed; an empty-but-non-nil
-// slice means the flag was present with no filter arguments.
+var (
+	ParseArgsData = make(map[string][]ArgumentData)
+	mu            sync.RWMutex
+	done          = make(chan struct{}) // The blocking signal
+)
 var helpArgs []string
 
-// ParseArgs registers a library's argument definitions so they are included in
-// parsing and help output. It MUST be called from an init() function — never
-// from a regular function. Go guarantees all init() calls complete before any
-// non-init code runs, which means EnsureParsed (however it is triggered) will
-// always see every registered package's definitions, regardless of call order.
-//
-// Calling ParseArgs outside of init() creates a race: EnsureParsed could fire
-// before the late registration, silently dropping those options from parsing
-// and help output.
 func ParseArgs(argData []ArgumentData) {
-	ParseArgsData[getCallerPackageName()] = argData
+	_ParseArgs(argData, getCallerPackageName())
+	<-done
+}
+func _ParseArgs(argData []ArgumentData, caller string) {
+	mu.Lock()
+	defer mu.Unlock()
+	ParseArgsData[caller] = argData
 }
 
 func assign(target any, value any) {
@@ -50,18 +47,16 @@ func assign(target any, value any) {
 	targetElem := targetVal.Elem()
 	val := reflect.ValueOf(value)
 
-	// 1. Direct Assignment (works for bool, string, etc.)
 	if val.Type().AssignableTo(targetElem.Type()) {
 		targetElem.Set(val)
 		return
 	}
 
-	// 2. Handle Slice Conversion (e.g., []any -> []int)
 	if targetElem.Kind() == reflect.Slice && (val.Kind() == reflect.Slice || val.Kind() == reflect.Array) {
 		newSlice := reflect.MakeSlice(targetElem.Type(), val.Len(), val.Len())
 		for i := 0; i < val.Len(); i++ {
 			item := val.Index(i)
-			// Handle the fact that the slice contains 'any' (interfaces)
+
 			if item.Kind() == reflect.Interface {
 				item = item.Elem()
 			}
@@ -75,7 +70,6 @@ func assign(target any, value any) {
 		return
 	}
 
-	// 3. Handle Single Value Conversion (e.g., int64 -> int)
 	if val.Type().ConvertibleTo(targetElem.Type()) {
 		targetElem.Set(val.Convert(targetElem.Type()))
 	} else {
@@ -84,9 +78,6 @@ func assign(target any, value any) {
 }
 
 func getCallerPackageName() string {
-	// 0: getCallerPackageName
-	// 1: ParseArgs
-	// 2: The actual library calling ParseArgs
 	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
 		return "unknown"
@@ -97,38 +88,31 @@ func getCallerPackageName() string {
 		return "unknown"
 	}
 
-	// FullName returns "path/to/pkg.FunctionName"
 	fullName := details.Name()
 
-	// We need to strip the function name and keep the package path
 	lastDot := strings.LastIndex(fullName, ".")
 	if lastDot == -1 {
 		return fullName
 	}
 
-	// Handle cases like "path/to/pkg.(*Type).Method"
 	pkgPath := fullName[:lastDot]
 	return pkgPath
 }
 
 func init() {
-	ParseArgs([]ArgumentData{{
+	_ParseArgs([]ArgumentData{{
 		Keys:        []string{"help", "h"},
 		AfterCount:  0,
-		Target:      &helpArgs, // *[]string: nil = not passed, non-nil = passed
+		Target:      &helpArgs,
 		Description: "show help; optionally filter by keyword",
 		VarArgs:     true,
 		AllowDupes:  false,
-	}})
-	var once sync.Once
-	once.Do(EnsureParsed)
-}
-
-func EnsureParsed() {
-	parseOnce.Do(func() {
+	}}, getCallerPackageName())
+	go func() {
+		runtime.Gosched()
+		mu.RLock()
 		args := os.Args[1:]
 
-		// 1. Handle "--" separator
 		for i, v := range args {
 			if v == "--" {
 				args = args[:i]
@@ -136,7 +120,6 @@ func EnsureParsed() {
 			}
 		}
 
-		// 2. Apply defaults for every registered package.
 		for _, argSlice := range ParseArgsData {
 			for i := range argSlice {
 				def := &argSlice[i]
@@ -152,8 +135,6 @@ func EnsureParsed() {
 			}
 		}
 
-		// 3. Parse — labeled break ensures a matched token is consumed by
-		//    exactly one definition across all registered packages.
 		for i := 0; i < len(args); {
 			found := false
 		argLoop:
@@ -223,30 +204,26 @@ func EnsureParsed() {
 			}
 		}
 
-		// 4. Help check — helpArgs is non-nil only when --help/-h was passed.
-		//    Because we're inside sync.Once, this runs at most once and only
-		//    after every registered package's options are already present.
 		if helpArgs != nil {
 			PrintHelp(helpArgs)
 			os.Exit(0)
 		}
-	})
+		mu.RUnlock()
+
+		// Signal everyone that parsing is finished
+		close(done)
+	}()
 }
 
-// collectVarArgs collects at least minCount tokens starting at args[start],
-// then continues collecting as long as the next token is not a registered key.
-// Returns the collected slice and the new index into args.
 func collectVarArgs(args []string, start, minCount int, allDefs []ArgumentData) ([]string, int) {
 	collected := []string{}
 	i := start
 
-	// Consume the minimum required values regardless of whether they look like flags.
 	for j := 0; j < minCount && i < len(args); j++ {
 		collected = append(collected, args[i])
 		i++
 	}
 
-	// Consume additional tokens until we hit something that matches a known key.
 	for i < len(args) && !isAnyKey(allDefs, args[i]) {
 		collected = append(collected, args[i])
 		i++
@@ -255,7 +232,6 @@ func collectVarArgs(args []string, start, minCount int, allDefs []ArgumentData) 
 	return collected, i
 }
 
-// isAnyKey reports whether token matches a key in any of the provided definitions.
 func isAnyKey(defs []ArgumentData, token string) bool {
 	for _, def := range defs {
 		if matches(def.Keys, token) {
@@ -276,20 +252,15 @@ const (
 )
 
 func PrintHelp(filters []string) {
-	// fmt.Printf("%sUsage Options:%s\n", Bold, Reset)
-
-	// Define column widths
 	const (
 		col1Width = 20
 		col2Width = 30
 	)
 
-	// Headers
 	fmt.Printf("  %-*s %-*s %s\n", col1Width, "FLAGS", col2Width, "EXPECTS", "DESCRIPTION")
 	fmt.Printf("  %s%s\n%s", Gray, strings.Repeat("-", col1Width+col2Width+13+20), Reset)
 	parseThisData := func(defs []ArgumentData) {
 		for _, def := range defs {
-			// 1. Build Key String (with colors)
 			keysFormatted := []string{}
 			rawKeysLen := 0
 			for i, k := range def.Keys {
@@ -300,12 +271,11 @@ func PrintHelp(filters []string) {
 				keysFormatted = append(keysFormatted, Cyan+p+k+Reset)
 				rawKeysLen += len(p) + len(k)
 				if i < len(def.Keys)-1 {
-					rawKeysLen += 2 // for ", "
+					rawKeysLen += 2
 				}
 			}
 			keysStr := strings.Join(keysFormatted, ", ")
 
-			// 2. Build Expects String (with colors)
 			var expects, rawExpects string
 			if def.VarArgs {
 				expects, rawExpects = Yellow+"<val1>...<valN>"+Reset, "<val1>...<valN>"
@@ -352,12 +322,7 @@ func PrintHelp(filters []string) {
 					}
 				}
 			}
-			//  else {
-			// 	// rawExpects = fmt.Sprintf("<%d values>", def.AfterCount)
-			// 	// expects = Yellow + rawExpects + Reset
-			// }
 
-			// 3. Filtering logic
 			if len(filters) > 0 {
 				match := false
 				fullKeyMatch := strings.Join(def.Keys, " ")
@@ -372,15 +337,11 @@ func PrintHelp(filters []string) {
 				}
 			}
 
-			// 4. PRINTING WITH MANUAL PADDING
-			// We subtract the "invisible" color bytes by calculating the difference
-			// between the colored string length and the plain text length.
 			kPadding := col1Width + (len(keysStr) - rawKeysLen)
 			ePadding := col2Width + (len(expects) - len(rawExpects))
 
 			fmt.Printf("  %-*s %-*s %s\n", kPadding, keysStr, ePadding, expects, def.Description)
 
-			// 5. Example Row
 			if def.AllowDupes || def.VarArgs || def.AfterCount > 1 || len(def.ExampleArgs) > 0 || len(def.Default) > 0 {
 				fmt.Printf("    %sExample:\n    %s%s\n", Gray, formatExample(def), Reset)
 			}
@@ -402,12 +363,7 @@ func repr(v any) string {
 		return "nil"
 	}
 	return fmt.Sprintf("%#v", v)
-	// switch val := v.(type) {
-	// case string:
-	// 	return `"` + val + `"` // Wraps strings in quotes
-	// default:
-	// 	return fmt.Sprintf("%v", val)
-	// }
+
 }
 func formatArg(name string, default_ any) string {
 	if default_ != nil {
@@ -416,18 +372,15 @@ func formatArg(name string, default_ any) string {
 	return Yellow + "<" + Cyan + name + Yellow + ">" + Reset
 }
 
-// formatExample generates a dummy usage string based on the definition
 func formatExample(def ArgumentData) string {
 	p := "-"
 	if len(def.Keys[0]) > 1 {
 		p = "--"
 	}
 	rawKey := p + def.Keys[0]
-	// Blue for the flag, then Gray for the surrounding "Example:" text
+
 	coloredKey := Blue + rawKey + Gray
 
-	// Helper to get either the custom ExampleArg or the fallback "valN"
-	// and wrap it in Yellow + brackets
 	getValName := func(index int) string {
 		name := fmt.Sprintf("val%d", index+1)
 		var default_ any = nil
