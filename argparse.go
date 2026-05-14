@@ -24,12 +24,12 @@ type ParseOptions struct {
 	DisableDefaultHelp bool
 }
 
-var alsoParseData map[string][]ArgumentData
+var alsoParseData = make(map[string][]ArgumentData)
 var help bool
 
 func AlsoParse(argData []ArgumentData) {
+	println("getCallerPackageName", getCallerPackageName())
 	alsoParseData[getCallerPackageName()] = argData
-	return
 }
 
 func assign(target any, value any) {
