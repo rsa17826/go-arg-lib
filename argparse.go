@@ -135,7 +135,6 @@ func init() {
 		VarArgs:     true,
 		AllowDupes:  false,
 	}})
-	go EnsureParsed()
 }
 
 // waitForInits spins until goroutine 1 (the main goroutine) is no longer
