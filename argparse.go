@@ -375,7 +375,7 @@ func PrintHelp(filters []string) {
 			}
 		}
 	}
-	println(Bold + Yellow + "Main" + Reset + " Usage Options:")
+	println(Bold + Yellow + "Main" + Reset + Bold + " Usage Options:")
 	parseThisData(alsoParseData["MAIN"])
 	for pkgName, defs := range alsoParseData {
 		if pkgName == "MAIN" {
