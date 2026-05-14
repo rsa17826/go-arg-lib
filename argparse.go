@@ -120,10 +120,8 @@ func init() {
 		VarArgs:     true,
 		AllowDupes:  false,
 	}})
-}
-
-func main() {
-	EnsureParsed()
+	var once sync.Once
+	once.Do(EnsureParsed)
 }
 
 func EnsureParsed() {
