@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	_ "unsafe"
 )
 
 type ArgumentData struct {
@@ -99,6 +100,9 @@ func getCallerPackageName() string {
 	return pkgPath
 }
 
+//go:linkname mainInitDone runtime.main_init_done
+var mainInitDone chan bool
+
 func init() {
 	_ParseArgs([]ArgumentData{{
 		Keys:        []string{"help", "h"},
@@ -111,7 +115,7 @@ func init() {
 	println("argparse1")
 	go func() {
 		println("argparse2")
-		runtime.Gosched()
+		<-mainInitDone
 		println("argparse3")
 		mu.RLock()
 		args := os.Args[1:]
