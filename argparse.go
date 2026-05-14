@@ -375,13 +375,13 @@ func PrintHelp(filters []string) {
 			}
 		}
 	}
-	println(Bold + Yellow + "Main" + Reset + Bold + " Usage Options:")
+	println(Yellow + "Main" + Reset + " Usage Options:")
 	parseThisData(alsoParseData["MAIN"])
 	for pkgName, defs := range alsoParseData {
 		if pkgName == "MAIN" {
 			continue
 		}
-		println(Bold + Yellow + pkgName + Reset + Bold + " Usage Options:" + Reset)
+		println(Yellow + pkgName + Reset + " Usage Options:" + Reset)
 		parseThisData(defs)
 	}
 }
