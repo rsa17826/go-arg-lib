@@ -81,6 +81,9 @@ func maybeScheduleHelp() {
 	if helpArgs == nil {
 		return
 	}
+	doScheduleHelp()
+}
+func doScheduleHelp() {
 	helpTimerMu.Lock()
 	defer helpTimerMu.Unlock()
 	if helpTimer != nil {
@@ -95,7 +98,7 @@ func maybeScheduleHelp() {
 	}
 }
 func PrintHelpAndExit() {
-	maybeScheduleHelp()
+	doScheduleHelp()
 	time.Sleep(1000 * time.Second)
 }
 func applyDefaults(defs []ArgumentData) {
