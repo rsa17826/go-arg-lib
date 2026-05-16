@@ -89,12 +89,15 @@ func maybeScheduleHelp() {
 		helpTimer = time.AfterFunc(5*time.Millisecond, func() {
 			mu.RLock()
 			defer mu.RUnlock()
-			PrintHelp(helpArgs)
+			_printHelp(helpArgs)
 			os.Exit(0)
 		})
 	}
 }
-
+func PrintHelpAndExit() {
+	maybeScheduleHelp()
+	time.Sleep(1000 * time.Second)
+}
 func applyDefaults(defs []ArgumentData) {
 	for i := range defs {
 		def := &defs[i]
@@ -268,7 +271,7 @@ const (
 	Gray   = "\033[90m"
 )
 
-func PrintHelp(filters []string) {
+func _printHelp(filters []string) {
 	const (
 		col1Width = 20
 		col2Width = 30
