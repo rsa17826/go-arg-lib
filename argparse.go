@@ -43,7 +43,7 @@ func init() {
 	}
 
 	helpDef := []ArgumentData{{
-		Keys:        []string{"help", "h"},
+		Keys:        []string{"help", "-h"},
 		Target:      &helpArgs,
 		Description: "show help; optionally filter by keyword",
 		VarArgs:     true,
